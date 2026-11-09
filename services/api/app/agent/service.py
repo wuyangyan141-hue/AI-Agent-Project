@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from . import prompts
 from .intent import StudyIntent, explicit_intent
 from ..database.store import list_tasks
-from ..skills.study_plan import make_study_plan
+from ..skills.study_plan import PlanProposal, make_study_plan, validate_plan
 from ..skills.replan import propose_replan
 from ..mcp.server import mcp
 
@@ -54,6 +54,22 @@ class StudyAgent:
             ('user', text),
         ])
         return result if isinstance(result, StudyIntent) else StudyIntent.model_validate(result)
+
+    async def generate_plan(self, goal: str, days: int, minutes_per_day: int):
+        """Generate a draft, then enforce the schedule before any persistence."""
+        # Validate input even when the model is enabled.
+        make_study_plan(goal, days, minutes_per_day)
+        if self.mode != 'langchain':
+            return make_study_plan(goal, days, minutes_per_day)
+        model_name = os.getenv('AGENT_MODEL', 'openai:gpt-4o-mini').removeprefix('openai:')
+        planner = ChatOpenAI(model=model_name, temperature=0).with_structured_output(PlanProposal)
+        result = await planner.ainvoke([
+            ('system', '你是学习计划制定者。给出可操作且不重复的学习任务，每天至少一个任务。'
+             '只按用户给定天数安排，不得超过每天时间预算。不要声称任务已保存。'),
+            ('user', f'学习目标：{goal}\n天数：{days}\n每天最多：{minutes_per_day} 分钟'),
+        ])
+        proposal = result if isinstance(result, PlanProposal) else PlanProposal.model_validate(result)
+        return validate_plan(proposal, days, minutes_per_day)
 
     async def respond(self, text: str, history: list[dict[str, str]], emit: Callable[[str, str], Awaitable[None]] | None = None) -> str:
         if self.mode != 'langchain':
