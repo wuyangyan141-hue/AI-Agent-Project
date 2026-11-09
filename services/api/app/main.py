@@ -172,6 +172,7 @@ def update_preference(key: str, item: PreferenceInput) -> dict:
 @app.websocket('/ws/chat')
 async def chat(websocket: WebSocket) -> None:
     await websocket.accept()
+    pending_plan = None
     await websocket.send_json({'type': 'welcome', 'text': '你好！我们开始学习吧。', 'state': 'idle', 'mode': agent.mode})
     try:
         while True:
@@ -201,6 +202,30 @@ async def chat(websocket: WebSocket) -> None:
                     history = store.recent_messages(db)
                 async def emit(state: str, message: str) -> None:
                     await websocket.send_json({'type': 'status', 'text': message, 'state': state})
+                if pending_plan is not None:
+                    intent = pending_plan.model_copy(update={'goal': text[:200]})
+                    pending_plan = None
+                else:
+                    intent = await asyncio.wait_for(agent.detect_intent(text, history), timeout=25)
+                if intent.action in {'plan', 'replan'}:
+                    if intent.action == 'plan' and not intent.goal.strip():
+                        pending_plan = intent
+                        await websocket.send_json({'type': 'reply', 'text': '想学习什么内容？请告诉我学习目标。', 'state': 'idle'})
+                        continue
+                    await emit('tool', '正在调用学习工作流：' + ('study_plan' if intent.action == 'plan' else 'replan'))
+                    with store.connect() as db:
+                        if intent.action == 'plan':
+                            steps = [step.__dict__ for step in make_study_plan(intent.goal, intent.days, intent.minutes_per_day)]
+                            draft = store.save_plan_draft(db, {'goal': intent.goal.strip(), 'steps': steps})
+                            kind = 'plan'
+                        else:
+                            proposal = propose_replan(store.list_tasks(db), intent.days, intent.minutes_per_day)
+                            draft = store.save_replan_draft(db, proposal)
+                            kind = 'replan'
+                        store.add_message(db, 'user', text)
+                        store.add_message(db, 'assistant', '已生成待确认的' + ('学习计划' if kind == 'plan' else '任务重排') + '草稿。')
+                    await websocket.send_json({'type': 'plan_draft', 'text': '草稿已生成，请检查后确认。', 'state': 'success', 'draft': draft, 'kind': kind})
+                    continue
                 reply = await asyncio.wait_for(agent.respond(text, history, emit), timeout=45)
                 with store.connect() as db:
                     store.add_message(db, 'user', text)
@@ -208,6 +233,8 @@ async def chat(websocket: WebSocket) -> None:
                 await websocket.send_json({'type': 'reply', 'text': reply, 'state': 'success'})
             except asyncio.TimeoutError:
                 await websocket.send_json({'type': 'error', 'text': '模型响应超时，请稍后重试。', 'state': 'error'})
+            except ValueError as exc:
+                await websocket.send_json({'type': 'error', 'text': str(exc), 'state': 'error'})
             except Exception:
                 logger.exception('Agent request failed')
                 await websocket.send_json({'type': 'error', 'text': '处理失败，请检查模型配置后重试。', 'state': 'error'})

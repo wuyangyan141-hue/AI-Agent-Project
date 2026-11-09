@@ -6,7 +6,9 @@ from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 from . import prompts
+from .intent import StudyIntent, explicit_intent
 from ..database.store import list_tasks
 from ..skills.study_plan import make_study_plan
 from ..skills.replan import propose_replan
@@ -29,11 +31,6 @@ class StudyAgent:
         self.local_tools = []
         if self.mode == 'langchain':
             @tool
-            def list_study_tasks() -> str:
-                """List the user's saved study tasks and completion state."""
-                with db_factory() as db:
-                    return str(list_tasks(db))
-            @tool
             def preview_study_plan(goal: str, days: int = 3, minutes_per_day: int = 45) -> str:
                 """Preview a study plan for a goal without saving tasks; user must confirm in the UI."""
                 return str([step.__dict__ for step in make_study_plan(goal, days, minutes_per_day)])
@@ -43,6 +40,20 @@ class StudyAgent:
                 with db_factory() as db:
                     return str(propose_replan(list_tasks(db), days, minutes_per_day))
             self.local_tools = [preview_study_plan, preview_unfinished_replan]
+
+    async def detect_intent(self, text: str, history: list[dict[str, str]]) -> StudyIntent:
+        direct = explicit_intent(text)
+        if direct.action != 'chat' or self.mode != 'langchain':
+            return direct
+        model_name = os.getenv('AGENT_MODEL', 'openai:gpt-4o-mini').removeprefix('openai:')
+        classifier = ChatOpenAI(model=model_name, temperature=0).with_structured_output(StudyIntent)
+        result = await classifier.ainvoke([
+            ('system', '识别用户当前意图。只有明确要求制定学习计划时选 plan；明确要重新安排未完成任务时选 replan；其他选 chat。'
+             'goal 填学习主题，不要编造；缺少天数用 3，缺少每天时长用 45 分钟。'),
+            *[(item['role'], item['content']) for item in history[-4:]],
+            ('user', text),
+        ])
+        return result if isinstance(result, StudyIntent) else StudyIntent.model_validate(result)
 
     async def respond(self, text: str, history: list[dict[str, str]], emit: Callable[[str, str], Awaitable[None]] | None = None) -> str:
         if self.mode != 'langchain':
