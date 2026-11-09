@@ -21,7 +21,7 @@ npm ci
 npm run dev
 ```
 
-Send a chat message, add a task and change the pet name. Data is stored at `services/api/data/companion.db` relative to the backend working directory. No API key is required for the deterministic demo. To enable a real LangChain agent, set `OPENAI_API_KEY` in the backend process environment and optionally `AGENT_MODEL` (default `openai:gpt-4o-mini`). Never commit keys. For custom frontend URLs create `apps/desktop/.env.local` with `VITE_WS_URL` and `VITE_API_URL`.
+Send a chat message, create a plan draft in the Tasks tab, confirm it, edit tasks, start a focus timer and try a B+ tree review question. Data is stored at `services/api/data/companion.db` relative to the backend working directory. No API key is required for the deterministic demo. To enable a real LangChain agent, set `OPENAI_API_KEY` in the backend process environment and optionally `AGENT_MODEL` (default `openai:gpt-4o-mini`). Never commit keys. For custom frontend URLs create `apps/desktop/.env.local` with `VITE_WS_URL` and `VITE_API_URL`.
 
 ## Verify
 
@@ -36,11 +36,11 @@ cd services/api && python -m pytest -q
 |---|---|
 | `apps/desktop/electron` | Secure window shell; transparent always-on-top pet window and drag behavior later |
 | `apps/desktop/src` | Chat, tasks, settings and pet event mapping; replace emoji with sprite animation later |
-| `services/api/app/agent` | LangChain `create_agent` with prompt and read-only task tool; richer planning later |
+| `services/api/app/agent` | LangChain `create_agent` with task listing and plan preview tools; emits tool-start status |
 | `services/api/app/rag` | Retriever contract; document ingestion, indexing and citation later |
-| `services/api/app/mcp` | MCP Python SDK stdio tool server and registry contract; agent-to-MCP transport adapter later |
-| `services/api/app/skills` | Reusable workflow contract; validated workflows later |
+| `services/api/app/mcp` | MCP Python SDK stdio tools for task listing/creation/completion and focus; agent-to-MCP transport adapter later |
+| `services/api/app/skills` | Study plan, unfinished-task replan and guided one-question review workflow |
 | `services/api/app/database` | SQLite tables and small repository; migrations and multi-session isolation later |
 | `docs` | [API contract](docs/api.md) and [development guide](docs/development.md) |
 
-LangChain is optional at run time; with no key, the app clearly reports demo mode. MCP tool exposure is real but the current Agent uses its equivalent local read-only tool directly. The desktop UI is an application window, not yet a transparent floating pet. Use LangGraph when explicit multi-step state, approvals and retries become necessary. Bind the backend to loopback; add authentication and stricter origin policy before remote access or packaging for distribution.
+LangChain is optional at run time; with no key, the app clearly reports demo mode. MCP tool exposure is real but the current Agent uses equivalent local read-only tools directly. Plans use a checked template in demo mode; generating a draft via the Tasks tab does not call the LLM. The review workflow has preset scoring points for B+ trees and Hash indexes and asks for manual review on other topics. Tool selection success for a real model has not yet been evaluated; the backend tests cover four deterministic MCP calls. The desktop UI is an application window, not yet a transparent floating pet. Use LangGraph when explicit multi-step state, approvals and retries become necessary. Bind the backend to loopback; add authentication and stricter origin policy before remote access or packaging for distribution.

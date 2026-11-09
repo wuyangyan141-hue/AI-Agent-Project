@@ -12,9 +12,18 @@ Local backend: `http://127.0.0.1:8000`; OpenAPI at `/docs`. The renderer uses RE
 | `PUT /preferences/pet_name` | `{"value":"小鲸"}` | `{key,value}` |
 | `POST /plans/replan-drafts` | `{"days":2,"minutes_per_day":30}` | Draft with schedule and reason; HTTP 422 if unfinished tasks cannot fit |
 | `POST /plans/replan-drafts/{id}/confirm` | — | Applies draft once; HTTP 409 if already applied or tasks changed |
+| `POST /plans/drafts` | `{ "goal":"复习数据库", "days":3, "minutes_per_day":40 }` | New plan draft with daily steps; no tasks are written yet |
+| `POST /plans/drafts/{id}/confirm` | — | Creates all draft tasks once; HTTP 409 on repeat |
+| `PATCH /tasks/{id}` | `{ "title":"B+树", "estimated_minutes":20, "done":true }` | Updated task |
+| `POST /focus` / `GET /focus` | `{ "minutes":25, "task_id":1 }` | Active timer and remaining seconds |
+| `POST /focus/{id}/finish` | — | Ends active timer |
+| `POST /reviews` | `{ "topic":"B+树" }` | One review question |
+| `POST /reviews/{id}/answer` | `{ "answer":"叶子节点用链连接" }` | Feedback and result |
 
 Replanning uses unfinished tasks only. A draft includes each task's previous and proposed day; creating it does not modify tasks. Confirmation updates the schedule transactionally. Current tasks default to 30 minutes, and the first version preserves existing task order. More nuanced priority, deadline and LLM intent extraction can be added behind the same confirmation contract.
 
 `WS /ws/chat` accepts `{"type":"message","text":"复习数据库"}`. The server sends `welcome` (`state: idle`), then `status` (`state: thinking`), then `reply` (`state: success`) or `error` (`state: error`). Each event has `type`, `text`, `state`; `welcome` also includes `mode`. Future states `searching` and `tool` are reserved in the renderer for later retrieval/tool events; this scaffold does not emit them yet.
 
 The demo agent is deterministic when `OPENAI_API_KEY` is absent. With a key, LangChain `create_agent` calls the configured OpenAI model and can use a read-only `list_study_tasks` tool. MCP SDK exposes that task tool as an independent stdio server; connecting LangChain to MCP transport is a later integration step. RAG remains an interface.
+
+The LangChain agent also has read-only plan preview tools. Saving a plan and editing tasks require explicit frontend confirmation through REST. The MCP stdio server provides task listing, creation, completion, and focus timer tools for future client integration; it is not wired into the Agent's LangChain tool list. The review skill currently has preset scoring points only for B+ trees and Hash indexes; other topics explicitly return `needs_review`. WebSocket emits `thinking`, tool start (`tool`), then `success` or `error`; retrieval events are reserved for the RAG module.
