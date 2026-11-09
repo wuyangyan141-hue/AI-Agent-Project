@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .agent.service import StudyAgent
 from .database import store
+from .skills.replan import propose_replan
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,10 @@ class TaskUpdate(BaseModel):
 
 class PreferenceInput(BaseModel):
     value: str = Field(max_length=100)
+
+class ReplanInput(BaseModel):
+    days: int = Field(ge=1, le=14)
+    minutes_per_day: int = Field(ge=15, le=240)
 
 @app.get('/health')
 def health() -> dict[str, str]:
@@ -49,6 +54,23 @@ def update_task(task_id: int, item: TaskUpdate) -> dict:
         if not store.set_task_done(db, task_id, item.done):
             raise HTTPException(404, 'Task not found')
     return {'id': task_id, 'done': item.done}
+
+@app.post('/plans/replan-drafts', status_code=201)
+def create_replan_draft(request: ReplanInput) -> dict:
+    with store.connect() as db:
+        try:
+            proposal = propose_replan(store.list_tasks(db), request.days, request.minutes_per_day)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return store.save_replan_draft(db, proposal)
+
+@app.post('/plans/replan-drafts/{draft_id}/confirm')
+def confirm_replan(draft_id: int) -> dict:
+    with store.connect() as db:
+        result = store.apply_replan_draft(db, draft_id)
+    if result is None:
+        raise HTTPException(409, 'Draft missing, already applied, or tasks changed')
+    return result
 
 @app.get('/preferences/{key}')
 def get_preference(key: str) -> dict:
