@@ -180,6 +180,17 @@ async def chat(websocket: WebSocket) -> None:
             except ValueError:
                 await websocket.send_json({'type': 'error', 'text': '消息必须是 JSON。', 'state': 'error'})
                 continue
+            if isinstance(event, dict) and event.get('type') == 'plan_request':
+                try:
+                    request = PlanInput.model_validate(event.get('payload'))
+                    steps = [step.__dict__ for step in make_study_plan(request.goal, request.days, request.minutes_per_day)]
+                    await websocket.send_json({'type': 'status', 'text': '正在生成计划草稿', 'state': 'thinking'})
+                    with store.connect() as db:
+                        draft = store.save_plan_draft(db, {'goal': request.goal.strip(), 'steps': steps})
+                    await websocket.send_json({'type': 'plan_draft', 'text': '计划草稿已生成，请检查并确认。', 'state': 'success', 'draft': draft})
+                except (ValueError, TypeError):
+                    await websocket.send_json({'type': 'error', 'text': '请提供目标、1–14 天和每天 15–240 分钟。', 'state': 'error'})
+                continue
             if not isinstance(event, dict) or event.get('type') != 'message' or not isinstance(event.get('text'), str) or not event['text'].strip() or len(event['text']) > 4000:
                 await websocket.send_json({'type': 'error', 'text': '请发送 1–4000 字的 message.text。', 'state': 'error'})
                 continue

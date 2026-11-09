@@ -52,6 +52,7 @@ function App() {
       try {
         const data = parseServerEvent(event.data);
         setPet(data.state); setActivity(data.text); if (data.mode) setMode(data.mode);
+        if (data.type === 'plan_draft' && data.draft) { setDraft(data.draft); setDraftKind('plan'); }
         if (data.type !== 'status') setMessages(old => [...old, `${petName}：${data.text}`]);
       } catch { setNotice('收到无法解析的消息。'); }
     };
@@ -67,6 +68,13 @@ function App() {
     e.preventDefault(); const text = input.trim();
     if (!text || socket.current?.readyState !== WebSocket.OPEN) return;
     socket.current.send(messageEvent(text)); setMessages(old => [...old, `我：${text}`]); setInput('');
+  }
+  function planFromChat() {
+    const text = input.trim();
+    if (!text || text.length > 200 || socket.current?.readyState !== WebSocket.OPEN) return;
+    socket.current.send(JSON.stringify({ type: 'plan_request', payload: { goal: text, days, minutes_per_day: dailyMinutes } }));
+    setMessages(old => [...old, `我：请为「${text}」制定 ${days} 天计划，每天 ${dailyMinutes} 分钟`]);
+    setInput('');
   }
   async function addTask(e: React.FormEvent) {
     e.preventDefault(); if (!taskTitle.trim()) return;
@@ -137,7 +145,7 @@ function App() {
   return <main>
     <header><span className={`pet ${pet}`} role="img" aria-label={`${petName}${labels[pet]}`}>🐳</span><div><h1>{petName} · AI 学习伙伴</h1><p>{connection} · {labels[pet]} · {mode === 'demo' ? '演示模式' : 'LangChain 模式'}</p><small>{activity}</small></div></header>
     <nav aria-label="功能"><button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>聊天</button><button className={tab === 'tasks' ? 'active' : ''} onClick={() => { setTab('tasks'); loadTasks(); }}>任务</button><button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>设置</button></nav>
-    {tab === 'chat' && <><section aria-label="对话记录">{messages.map((message, i) => <p key={i}>{message}</p>)}</section><form onSubmit={send}><input aria-label="消息" value={input} onChange={e => setInput(e.target.value)} placeholder="说说你的学习计划…" maxLength={4000}/><button disabled={connection !== '已连接'}>发送</button></form></>}
+    {tab === 'chat' && <><section aria-label="对话记录">{messages.map((message, i) => <p key={i}>{message}</p>)}</section><form onSubmit={send}><input aria-label="消息" value={input} onChange={e => setInput(e.target.value)} placeholder="说说你的学习计划…" maxLength={4000}/><button disabled={connection !== '已连接'}>发送</button></form><div className="controls"><label>计划天数<input aria-label="聊天计划天数" type="number" min={1} max={14} value={days} onChange={e => setDays(Number(e.target.value))}/></label><label>每天分钟<input aria-label="聊天每日分钟" type="number" min={15} max={240} value={dailyMinutes} onChange={e => setDailyMinutes(Number(e.target.value))}/></label><button onClick={planFromChat} disabled={!input.trim() || input.trim().length > 200 || connection !== '已连接'}>将输入作为学习目标生成计划</button></div>{draft && <div className="draft"><h3>待确认的计划草稿</h3><ol>{(draft.steps || draft.schedule || []).map((step, i) => <li key={i}>第 {step.day} 天 · {step.title} · {step.minutes} 分钟</li>)}</ol><button onClick={confirmDraft}>确认并保存任务</button><button onClick={() => setDraft(null)}>取消</button></div>}</>}
     {tab === 'tasks' && <section><h2>学习计划</h2><div className="controls"><input aria-label="学习目标" value={goal} onChange={e => setGoal(e.target.value)} placeholder="例如：复习数据库索引"/><label>天数<input aria-label="计划天数" type="number" min={1} max={14} value={days} onChange={e => setDays(Number(e.target.value))}/></label><label>每天分钟<input aria-label="每日分钟" type="number" min={15} max={240} value={dailyMinutes} onChange={e => setDailyMinutes(Number(e.target.value))}/></label></div><div className="controls"><button onClick={() => createDraft('plan')} disabled={!goal.trim()}>生成新计划</button><button onClick={() => createDraft('replan')}>重新安排未完成任务</button></div>{draft && <div className="draft"><h3>计划草稿（尚未保存）</h3><p>{draft.reason}</p><ol>{(draft.steps || draft.schedule || []).map((step, i) => <li key={i}>第 {step.day} 天 · {step.title} · {step.minutes} 分钟</li>)}</ol><button onClick={confirmDraft}>确认并保存</button><button onClick={() => setDraft(null)}>取消</button></div>}<h2>学习任务</h2><form onSubmit={addTask}><input aria-label="新任务" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="例如：复习数据库索引" maxLength={200}/><button>添加</button></form><ul>{tasks.map(task => <li key={task.id}><label><input type="checkbox" checked={task.done} onChange={() => toggleTask(task)}/><span className={task.done ? 'done' : ''}>{task.title} · {task.estimated_minutes} 分钟{task.scheduled_day ? ` · 第 ${task.scheduled_day} 天` : ''}</span></label><button onClick={() => editTask(task)}>修改</button></li>)}</ul><h2>专注计时</h2>{focus.id ? <div><strong>{Math.floor(focus.remaining_seconds / 60)}:{String(focus.remaining_seconds % 60).padStart(2, '0')}</strong><button onClick={stopFocus}>结束</button></div> : <div className="controls"><input aria-label="专注分钟" type="number" min={1} max={240} value={focusMinutes} onChange={e => setFocusMinutes(Number(e.target.value))}/><button onClick={startFocus}>开始专注</button></div>}<h2>交互式复习</h2><div className="controls"><input aria-label="复习知识点" value={reviewTopic} onChange={e => setReviewTopic(e.target.value)} placeholder="例如：B+树"/><button onClick={startReview} disabled={!reviewTopic.trim()}>开始复习</button></div>{review && <div><p>{review.question}</p><textarea aria-label="我的回答" value={reviewAnswer} onChange={e => setReviewAnswer(e.target.value)}/><button onClick={submitReview} disabled={!reviewAnswer.trim()}>提交回答</button></div>}{reviewFeedback && <p role="status">{reviewFeedback}</p>}</section>}
     {tab === 'settings' && <section><h2>设置</h2><form onSubmit={saveName}><label htmlFor="pet-name">桌宠名字</label><input id="pet-name" value={petName} onChange={e => setPetName(e.target.value)} maxLength={100}/><button>保存</button></form><p>当前模式：{mode === 'demo' ? '演示回复（未配置模型密钥）' : 'LangChain Agent'}</p></section>}
     <footer role="status">{notice || '桌宠会根据后端事件切换状态。'}</footer>
