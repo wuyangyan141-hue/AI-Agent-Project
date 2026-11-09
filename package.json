@@ -1,0 +1,6 @@
+{
+  "name": "ai-learning-companion", "private": true, "version": "0.1.0",
+  "workspaces": ["apps/desktop"],
+  "scripts": {"dev": "npm run dev -w @companion/desktop", "build": "npm run build -w @companion/desktop", "test": "npm run test -w @companion/desktop", "typecheck": "npm run typecheck -w @companion/desktop"},
+  "engines": {"node": ">=20"}
+}
