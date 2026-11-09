@@ -15,6 +15,7 @@ def test_explicit_intent_routes_only_clear_commands():
     assert explicit_intent('数据库索引有什么用途？').action == 'chat'
     assert explicit_intent('帮我制定复习数据库的学习计划，99天').action == 'chat'
     assert explicit_intent('帮我制定学习计划').model_dump()['goal'] == ''
+    assert explicit_intent('怎么制定学习计划？').action == 'chat'
 
 
 def test_chat_plan_and_replan_need_confirmation(tmp_path, monkeypatch):

@@ -28,6 +28,6 @@ def explicit_intent(text: str) -> StudyIntent:
         goal = re.sub(r'\s*\d{1,2}\s*天.*$', '', goal).strip()
         if goal:
             return StudyIntent(action='plan', goal=goal, days=days, minutes_per_day=minutes)
-    if re.search(r'(?:制定|生成|安排|规划).{0,8}(?:学习)?计划', text):
+    if re.match(r'^\s*(?:(?:请|帮我|给我)\s*)*(?:制定|生成|安排|规划).{0,8}(?:学习)?计划', text):
         return StudyIntent(action='plan', days=days, minutes_per_day=minutes)
     return StudyIntent()
