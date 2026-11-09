@@ -54,7 +54,7 @@ function App() {
         const data = parseServerEvent(event.data);
         petChannel.postMessage(data);
         setPet(data.state); setActivity(data.text); if (data.mode) setMode(data.mode);
-        if (data.type === 'plan_draft' && data.draft) { setDraft(data.draft); setDraftKind('plan'); }
+        if (data.type === 'plan_draft' && data.draft) { setDraft(data.draft); setDraftKind(data.kind || 'plan'); }
         if (data.type !== 'status') setMessages(old => [...old, `${petName}：${data.text}`]);
       } catch { setNotice('收到无法解析的消息。'); }
     };
