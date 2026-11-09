@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from .agent.service import StudyAgent
 from .database import store
 from .skills.replan import propose_replan
-from .skills.study_plan import make_study_plan
 from .skills.review_session import begin_review, evaluate_review
 
 logger = logging.getLogger(__name__)
@@ -78,11 +77,16 @@ def update_task(task_id: int, item: TaskUpdate) -> dict:
     return result
 
 @app.post('/plans/drafts', status_code=201)
-def create_plan_draft(item: PlanInput) -> dict:
+async def create_plan_draft(item: PlanInput) -> dict:
     try:
-        steps = [step.__dict__ for step in make_study_plan(item.goal, item.days, item.minutes_per_day)]
+        steps = [step.__dict__ for step in await asyncio.wait_for(agent.generate_plan(item.goal, item.days, item.minutes_per_day), timeout=45)]
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(504, 'Plan generation timed out') from exc
+    except Exception as exc:
+        logger.exception('Plan generation failed')
+        raise HTTPException(503, 'Plan generation failed; check model configuration') from exc
     with store.connect() as db:
         return store.save_plan_draft(db, {'goal': item.goal.strip(), 'steps': steps})
 
@@ -184,13 +188,18 @@ async def chat(websocket: WebSocket) -> None:
             if isinstance(event, dict) and event.get('type') == 'plan_request':
                 try:
                     request = PlanInput.model_validate(event.get('payload'))
-                    steps = [step.__dict__ for step in make_study_plan(request.goal, request.days, request.minutes_per_day)]
                     await websocket.send_json({'type': 'status', 'text': '正在生成计划草稿', 'state': 'thinking'})
+                    steps = [step.__dict__ for step in await asyncio.wait_for(agent.generate_plan(request.goal, request.days, request.minutes_per_day), timeout=45)]
                     with store.connect() as db:
                         draft = store.save_plan_draft(db, {'goal': request.goal.strip(), 'steps': steps})
                     await websocket.send_json({'type': 'plan_draft', 'text': '计划草稿已生成，请检查并确认。', 'state': 'success', 'draft': draft})
                 except (ValueError, TypeError):
                     await websocket.send_json({'type': 'error', 'text': '请提供目标、1–14 天和每天 15–240 分钟。', 'state': 'error'})
+                except asyncio.TimeoutError:
+                    await websocket.send_json({'type': 'error', 'text': '计划生成超时，请重试。', 'state': 'error'})
+                except Exception:
+                    logger.exception('Plan generation failed')
+                    await websocket.send_json({'type': 'error', 'text': '计划生成失败，请检查模型配置。', 'state': 'error'})
                 continue
             if not isinstance(event, dict) or event.get('type') != 'message' or not isinstance(event.get('text'), str) or not event['text'].strip() or len(event['text']) > 4000:
                 await websocket.send_json({'type': 'error', 'text': '请发送 1–4000 字的 message.text。', 'state': 'error'})
@@ -213,9 +222,10 @@ async def chat(websocket: WebSocket) -> None:
                         await websocket.send_json({'type': 'reply', 'text': '想学习什么内容？请告诉我学习目标。', 'state': 'idle'})
                         continue
                     await emit('tool', '正在调用学习工作流：' + ('study_plan' if intent.action == 'plan' else 'replan'))
+                    if intent.action == 'plan':
+                        steps = [step.__dict__ for step in await asyncio.wait_for(agent.generate_plan(intent.goal, intent.days, intent.minutes_per_day), timeout=45)]
                     with store.connect() as db:
                         if intent.action == 'plan':
-                            steps = [step.__dict__ for step in make_study_plan(intent.goal, intent.days, intent.minutes_per_day)]
                             draft = store.save_plan_draft(db, {'goal': intent.goal.strip(), 'steps': steps})
                             kind = 'plan'
                         else:
