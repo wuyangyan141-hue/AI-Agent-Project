@@ -1,0 +1,6 @@
+"""MCP tool registry boundary; wire SDK clients here in a later milestone."""
+from typing import Protocol
+
+class ToolRegistry(Protocol):
+    async def list_tools(self) -> list[str]: ...
+    async def call_tool(self, name: str, arguments: dict) -> dict: ...
