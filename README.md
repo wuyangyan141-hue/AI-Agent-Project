@@ -1,42 +1,46 @@
 # AI Learning Companion · desktop pet
 
-Graduate course team project: an extensible AI study companion with an Electron desktop pet and React chat. The first milestone runs a FastAPI WebSocket echo service and a desktop client. The whale is an interaction placeholder; LLM responses, task management and animated pet behavior are future milestones.
+A graduate team project scaffold for an extensible desktop study companion. Electron owns the window, React + TypeScript renders chat/tasks/settings and a state-driven pet placeholder, FastAPI owns REST/WebSocket endpoints, and SQLite stores local conversations, tasks and preferences.
 
-## Requirements
+## Run locally
 
-Node.js 20+ (CI uses 22), npm, Python 3.12. Start backend and desktop in separate terminals:
+Requires Node.js 20+ (CI: 22), npm and Python 3.12. In one terminal:
 
 ```bash
 cd services/api
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+source .venv/bin/activate  # Windows PowerShell: .venv\\Scripts\\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+In another terminal, from repository root:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Send a message in the desktop window; it should show `收到：…`. For a browser-only renderer preview run `npm run dev -w @companion/desktop -- --help` to see the Electron command, or `npm exec -w @companion/desktop vite -- --host 127.0.0.1`. Use `apps/desktop/.env.local` with `VITE_WS_URL=ws://127.0.0.1:8000/ws/chat` if the backend address changes. The backend currently accepts local development connections; add explicit origin and authentication policy before distribution.
+Send a chat message, add a task and change the pet name. Data is stored at `services/api/data/companion.db` relative to the backend working directory. No API key is required for the deterministic demo. To enable a real LangChain agent, set `OPENAI_API_KEY` in the backend process environment and optionally `AGENT_MODEL` (default `openai:gpt-4o-mini`). Never commit keys. For custom frontend URLs create `apps/desktop/.env.local` with `VITE_WS_URL` and `VITE_API_URL`.
 
-## Validate
+## Verify
 
 ```bash
 npm run typecheck && npm test && npm run build
 cd services/api && python -m pytest -q
 ```
 
-## Layout
+## Team modules
 
-- `apps/desktop/electron`: secure desktop shell and preload boundary.
-- `apps/desktop/src`: React renderer, chat and WebSocket protocol.
-- `services/api/app/agent`: LangChain integration seam; echo implementation for first milestone.
-- `services/api/app/rag`: local retrieval interface with source attribution.
-- `services/api/app/mcp`: MCP Python SDK tool registry interface.
-- `services/api/app/skills`: reusable workflow interface.
-- `services/api/app/database`: SQLite connection factory (schema follows).
-- `docs/api.md`: message contract; `docs/development.md`: collaboration rules.
+| Location | Responsibility / next implementation |
+|---|---|
+| `apps/desktop/electron` | Secure window shell; transparent always-on-top pet window and drag behavior later |
+| `apps/desktop/src` | Chat, tasks, settings and pet event mapping; replace emoji with sprite animation later |
+| `services/api/app/agent` | LangChain `create_agent` with prompt and read-only task tool; richer planning later |
+| `services/api/app/rag` | Retriever contract; document ingestion, indexing and citation later |
+| `services/api/app/mcp` | MCP Python SDK stdio tool server and registry contract; agent-to-MCP transport adapter later |
+| `services/api/app/skills` | Reusable workflow contract; validated workflows later |
+| `services/api/app/database` | SQLite tables and small repository; migrations and multi-session isolation later |
+| `docs` | [API contract](docs/api.md) and [development guide](docs/development.md) |
 
-Dependencies for LangChain and MCP are installed but intentionally not used by the echo prototype. See [API contract](docs/api.md) and [team development](docs/development.md).
+LangChain is optional at run time; with no key, the app clearly reports demo mode. MCP tool exposure is real but the current Agent uses its equivalent local read-only tool directly. The desktop UI is an application window, not yet a transparent floating pet. Use LangGraph when explicit multi-step state, approvals and retries become necessary. Bind the backend to loopback; add authentication and stricter origin policy before remote access or packaging for distribution.

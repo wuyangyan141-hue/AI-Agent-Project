@@ -1,10 +1,16 @@
-# API contract (v0.1)
+# API contract (v0.2)
 
-Base URL `http://127.0.0.1:8000`; FastAPI interactive OpenAPI: `/docs`.
+Local backend: `http://127.0.0.1:8000`; OpenAPI at `/docs`. The renderer uses REST for tasks and preferences, WebSocket for chat and pet state. This is a single-user local prototype, not a remotely exposed service.
 
-- `GET /health` → `200 {"status":"ok"}`.
-- `WS /ws/chat` → server immediately sends `{"type":"welcome","text":"..."}`.
-- Client sends `{"type":"message","text":"复习数据库"}`. Server replies `{"type":"reply","text":"..."}`.
-- Invalid events receive `{"type":"error","text":"..."}`. The socket stays open; disconnect ends the session.
+| Endpoint | Request | Response |
+|---|---|---|
+| `GET /health` | — | `{"status":"ok","agent_mode":"demo"}` or `langchain` |
+| `GET /tasks` | — | Array of `{id,title,done}` |
+| `POST /tasks` | `{"title":"复习索引"}` | Created task, HTTP 201 |
+| `PATCH /tasks/{id}` | `{"done":true}` | `{id,done}`; 404 if absent |
+| `GET /preferences/pet_name` | — | `{key,value}` |
+| `PUT /preferences/pet_name` | `{"value":"小鲸"}` | `{key,value}` |
 
-The current response is a deterministic echo prototype. No LLM, retrieval, tool execution or persistence is enabled yet. Event types are validated on both sides. Keep future events versioned and documented here.
+`WS /ws/chat` accepts `{"type":"message","text":"复习数据库"}`. The server sends `welcome` (`state: idle`), then `status` (`state: thinking`), then `reply` (`state: success`) or `error` (`state: error`). Each event has `type`, `text`, `state`; `welcome` also includes `mode`. Future states `searching` and `tool` are reserved in the renderer for later retrieval/tool events; this scaffold does not emit them yet.
+
+The demo agent is deterministic when `OPENAI_API_KEY` is absent. With a key, LangChain `create_agent` calls the configured OpenAI model and can use a read-only `list_study_tasks` tool. MCP SDK exposes that task tool as an independent stdio server; connecting LangChain to MCP transport is a later integration step. RAG remains an interface.
