@@ -38,4 +38,21 @@ def test_daily_quiz_and_weak_point():
 
 def test_focus_and_next_intents():
     assert explicit_intent('下一步').action == 'next'
+    assert explicit_intent('怎么办').action == 'next'
+    assert explicit_intent('卡住了').action == 'next'
     assert explicit_intent('薄弱点回顾').action == 'weak'
+
+
+def test_demo_agent_coaches_next_step(monkeypatch):
+    from app.agent.service import StudyAgent
+    from app.database import store
+
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    monkeypatch.setattr('app.skills.learning_loop.learning_status', lambda: {
+        'has_documents': False, 'open_tasks': 0, 'next_task': None,
+        'focus': {'id': None, 'remaining_seconds': 0}, 'waiting_review': None,
+        'recent_reviews': [], 'streak': {'current_streak': 0},
+    })
+    reply = StudyAgent(store.connect)._demo_coach('你好')
+    assert '推断' in reply or '进度' in reply
+    assert '上传' in reply

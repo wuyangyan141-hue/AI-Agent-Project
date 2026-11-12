@@ -4,7 +4,7 @@ import { mapServerEventToPet } from './stateMapping';
 import {
   DEFAULT_BUBBLE_COPY,
   ERROR_HOLD_MS,
-  SUCCESS_HOLD_MS,
+  bubbleHoldMs,
   type ChatLine,
   type ConnectionPhase,
   type PetAnimationState,
@@ -29,9 +29,31 @@ export function usePetSocket() {
   const sendingRef = useRef(false);
   const reconnectTimer = useRef<number | null>(null);
   const holdTimer = useRef<number | null>(null);
+  const sendWatchdog = useRef<number | null>(null);
   const intentionalClose = useRef(false);
 
   const petBus = useRef<BroadcastChannel | null>(null);
+
+  function clearSending() {
+    sendingRef.current = false;
+    setSending(false);
+    if (sendWatchdog.current) {
+      window.clearTimeout(sendWatchdog.current);
+      sendWatchdog.current = null;
+    }
+  }
+
+  function armSendWatchdog() {
+    if (sendWatchdog.current) window.clearTimeout(sendWatchdog.current);
+    // Unlock the send button if the backend never finishes the turn.
+    sendWatchdog.current = window.setTimeout(() => {
+      if (!sendingRef.current) return;
+      clearSending();
+      setAnimation('error');
+      setBubbleText('回复超时了，请再发一次。');
+      publishLocal('error', '回复超时了，请再发一次。');
+    }, 60000);
+  }
 
   function publishLocal(animationState: PetAnimationState, text: string) {
     const event = { type: 'status', state: animationState, text };
@@ -42,14 +64,15 @@ export function usePetSocket() {
     }
   }
 
-  function applyTerminalHold(next: PetAnimationState) {
+  function applyTerminalHold(next: PetAnimationState, text: string) {
     if (holdTimer.current) window.clearTimeout(holdTimer.current);
     if (next !== 'success' && next !== 'error') return;
+    const holdMs = bubbleHoldMs(text, next === 'error' ? 'error' : 'success');
     holdTimer.current = window.setTimeout(() => {
       setAnimation('idle');
       setBubbleText(DEFAULT_BUBBLE_COPY.idle);
       publishLocal('idle', DEFAULT_BUBBLE_COPY.idle);
-    }, next === 'success' ? SUCCESS_HOLD_MS : ERROR_HOLD_MS);
+    }, holdMs);
   }
 
   useEffect(() => {
@@ -82,10 +105,9 @@ export function usePetSocket() {
             return lines;
           });
         }
-        if (mapped.finished) {
-          sendingRef.current = false;
-          setSending(false);
-          applyTerminalHold(mapped.animation);
+        if (mapped.finished || data.type === 'reply' || data.type === 'error' || data.type === 'plan_draft') {
+          clearSending();
+          if (mapped.finished) applyTerminalHold(mapped.animation, mapped.bubbleText);
         }
       } catch {
         /* ignore malformed */
@@ -100,6 +122,7 @@ export function usePetSocket() {
       ws.onopen = () => {
         if (cancelled) return;
         setConnection('connected');
+        clearSending();
         // Resume idle flavours after reconnect instead of staying on error/thinking.
         setAnimation('idle');
         setBubbleText(DEFAULT_BUBBLE_COPY.idle);
@@ -108,8 +131,7 @@ export function usePetSocket() {
       ws.onclose = () => {
         if (cancelled || intentionalClose.current) return;
         setConnection('disconnected');
-        sendingRef.current = false;
-        setSending(false);
+        clearSending();
         setAnimation('error');
         setBubbleText(DEFAULT_BUBBLE_COPY.error);
         publishLocal('error', DEFAULT_BUBBLE_COPY.error);
@@ -132,6 +154,7 @@ export function usePetSocket() {
       intentionalClose.current = true;
       if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
       if (holdTimer.current) window.clearTimeout(holdTimer.current);
+      if (sendWatchdog.current) window.clearTimeout(sendWatchdog.current);
       socket.current?.close();
       channel.close();
       sync.current = null;
@@ -140,8 +163,9 @@ export function usePetSocket() {
 
   function sendText(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || connection !== 'connected' || sendingRef.current || socket.current?.readyState !== WebSocket.OPEN) return false;
-    socket.current.send(JSON.stringify({ ...JSON.parse(messageEvent(trimmed)), session_id: session.current }));
+    const live = socket.current;
+    if (!trimmed || sendingRef.current || !live || live.readyState !== WebSocket.OPEN) return false;
+    live.send(JSON.stringify({ ...JSON.parse(messageEvent(trimmed)), session_id: session.current }));
     const userLine = { id: crypto.randomUUID(), role: 'user' as const, content: trimmed };
     setMessages((old) => {
       const lines = [...old.slice(-39), userLine];
@@ -150,6 +174,8 @@ export function usePetSocket() {
     });
     sendingRef.current = true;
     setSending(true);
+    setConnection('connected');
+    armSendWatchdog();
     setAnimation('thinking');
     setBubbleText(DEFAULT_BUBBLE_COPY.thinking);
     publishLocal('thinking', DEFAULT_BUBBLE_COPY.thinking);
@@ -165,5 +191,6 @@ export function usePetSocket() {
     sending,
     messages,
     sendText,
+    clearSending,
   };
 }

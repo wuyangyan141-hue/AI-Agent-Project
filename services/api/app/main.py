@@ -242,7 +242,11 @@ async def chat(websocket: WebSocket) -> None:
     await websocket.accept()
     pending_plan = None
     active_session_id = None
-    await websocket.send_json({'type': 'welcome', 'text': '你好！我们开始学习吧。', 'state': 'idle', 'mode': agent.mode})
+    coach = next_step()
+    welcome = '你好！我是你的学习伙伴。\n' + format_next_step(coach)
+    await websocket.send_json({
+        'type': 'welcome', 'text': welcome, 'state': 'idle', 'mode': agent.mode, 'next_step': coach,
+    })
     try:
         while True:
             try:
@@ -299,6 +303,92 @@ async def chat(websocket: WebSocket) -> None:
                     history = []
                 async def emit(state: str, message: str) -> None:
                     await websocket.send_json({'type': 'status', 'text': message, 'state': state})
+                # Open review session: treat normal chat as the answer (don't restart the same topic).
+                waiting = None
+                with store.connect() as db:
+                    row = db.execute(
+                        "SELECT id, topic, question FROM review_sessions WHERE status='waiting' ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if row:
+                        waiting = dict(row)
+                intent_preview = explicit_intent(text)
+                answering_echo = bool(re.search(r'我来回答|直接作答|提交答案', text))
+                social = text.strip('！!。,.，?？ ~～') in {
+                    '你好', '嗨', 'hi', 'hello', '在吗', '早上好', '晚上好', '下午好',
+                    '谢谢', '谢谢你', '拜拜', '再见', '嗯', '好的', '好', 'ok', 'OK',
+                }
+                skip_review = bool(re.search(r'跳过(这题|本题|复习)?|取消复习|先不答|下次再答', text))
+                if waiting and skip_review:
+                    with store.connect() as db:
+                        db.execute(
+                            "UPDATE review_sessions SET status=?, feedback=? WHERE id=?",
+                            ('skipped', '用户跳过本题', waiting['id']),
+                        )
+                        db.commit()
+                    coach = next_step()
+                    answer = '好，这题先跳过。\n' + format_next_step(coach)
+                    saved = knowledge.record_exchange('local-user', text, answer, session_id, {
+                        'review': {'id': waiting['id'], 'status': 'skipped'}, 'next_step': coach,
+                    })
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({
+                        'type': 'reply', 'text': saved['answer'], 'state': 'success',
+                        'session_id': saved['session_id'], 'next_step': coach,
+                    })
+                    continue
+                # New quiz/review/plan commands win over grading the pending answer.
+                if waiting and intent_preview.action in {'quiz', 'review', 'weak', 'plan', 'replan', 'focus'}:
+                    with store.connect() as db:
+                        db.execute(
+                            "UPDATE review_sessions SET status=?, feedback=? WHERE id=? AND status=?",
+                            ('skipped', '被新的学习请求替换', waiting['id'], 'waiting'),
+                        )
+                        db.commit()
+                    waiting = None
+                # Greetings / short social chat should not be graded as review answers.
+                if waiting and intent_preview.action in {'chat', 'next'} and not personal and not social:
+                    if answering_echo:
+                        coach = next_step('review')
+                        answer = (
+                            f'题目还在等你：{waiting["question"]}\n'
+                            f'主题：{waiting["topic"]}。请直接输入你的理解或例子；'
+                            f'闲聊可以说「你好」，跳过可以说「跳过这题」。\n'
+                            + format_next_step(coach)
+                        )
+                        saved = knowledge.record_exchange('local-user', text, answer, session_id, {
+                            'review': waiting, 'next_step': coach,
+                        })
+                        active_session_id = saved['session_id']
+                        await websocket.send_json({
+                            'type': 'reply', 'text': saved['answer'], 'state': 'idle',
+                            'session_id': saved['session_id'], 'next_step': coach,
+                        })
+                        continue
+                    await emit('tool', '正在批改复习题')
+                    result = evaluate_review(waiting['topic'], text)
+                    with store.connect() as db:
+                        db.execute(
+                            'UPDATE review_sessions SET answer=?, feedback=?, status=? WHERE id=?',
+                            (text, result['feedback'], result['result'], waiting['id']),
+                        )
+                        db.commit()
+                    streak = mark_study_activity(0)
+                    coach = next_step('review')
+                    score = result.get('score')
+                    verdict = result.get('verdict') or result.get('result')
+                    score_line = f'判定：{verdict}' + (f'（{score} 分）' if score is not None else '')
+                    answer = (
+                        f'{score_line}\n{result["feedback"]}\n' + format_next_step(coach)
+                    )
+                    saved = knowledge.record_exchange('local-user', text, answer, session_id, {
+                        'review': {'id': waiting['id'], **result}, 'next_step': coach, 'streak': streak,
+                    })
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({
+                        'type': 'reply', 'text': saved['answer'], 'state': 'success',
+                        'session_id': saved['session_id'], 'next_step': coach, 'streak': streak,
+                    })
+                    continue
                 if pending_plan is not None:
                     intent = pending_plan.model_copy(update={'goal': text[:200]})
                     pending_plan = None
@@ -307,6 +397,23 @@ async def chat(websocket: WebSocket) -> None:
                         intent = StudyIntent()
                     else:
                         intent = await asyncio.wait_for(agent.detect_intent(text, history), timeout=25)
+                # Starting "复习" while one is waiting → remind instead of spawning duplicates.
+                if intent.action == 'review' and waiting:
+                    coach = next_step('review')
+                    answer = (
+                        f'上一题还没答完：{waiting["question"]}\n'
+                        f'请先作答（主题：{waiting["topic"]}），答完再说「开始复习」出下一题。\n'
+                        + format_next_step(coach)
+                    )
+                    saved = knowledge.record_exchange('local-user', text, answer, session_id, {
+                        'review': waiting, 'next_step': coach,
+                    })
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({
+                        'type': 'reply', 'text': saved['answer'], 'state': 'idle',
+                        'session_id': saved['session_id'], 'next_step': coach,
+                    })
+                    continue
                 if intent.action in {'plan', 'replan'}:
                     if intent.action == 'plan' and not intent.goal.strip():
                         pending_plan = intent

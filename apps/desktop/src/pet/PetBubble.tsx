@@ -14,15 +14,14 @@ export function PetBubble({
   onOpenFullChat,
 }: {
   text: string;
-  onOpenFullChat: () => void;
+  onOpenFullChat?: () => void;
 }) {
-  const truncated = isBubbleTruncated(text);
   return (
     <div className="pet-bubble" data-interactive role="status" aria-live="polite">
-      <p className="pet-bubble-text">{text}</p>
-      {truncated && (
+      <p className="pet-bubble-text pet-bubble-text-idle">{text}</p>
+      {onOpenFullChat && (
         <button type="button" className="pet-bubble-more" onClick={onOpenFullChat}>
-          打开完整聊天
+          打开聊天
         </button>
       )}
       <span className="pet-bubble-arrow" aria-hidden="true" />

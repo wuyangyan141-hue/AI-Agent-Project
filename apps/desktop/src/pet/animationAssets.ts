@@ -51,7 +51,8 @@ export const PET_BASE_SPRITE = basePuppy;
  * 0-3 blink/wag · 4-7 look up · 8-11 look around · 12-15 talk · 16-19 wave
  */
 export const PET_FRAME_SETS: Record<PetClip, PetFrameSet> = {
-  idle: { frames: [0, 0, 1, 2, 1, 0, 3, 0, 0, 1, 0], frameMs: 420, loop: true },
+  // Fast blink while idle (1/2 ≈ closed); hold open eyes a bit longer between blinks.
+  idle: { frames: [0, 0, 1, 2, 1, 0, 0, 0, 3, 0, 0, 1, 2, 1, 0], frameMs: 180, loop: true },
   thinking: { frames: [4, 5, 6, 7, 6, 5], frameMs: 260, loop: true },
   searching: { frames: [8, 9, 10, 11, 10, 9], frameMs: 220, loop: true },
   tool: { frames: [4, 5, 12, 13, 5, 4], frameMs: 240, loop: true },
@@ -64,12 +65,13 @@ export const PET_FRAME_SETS: Record<PetClip, PetFrameSet> = {
   peek: { frames: [8, 9, 10, 11, 10, 9, 8, 0], frameMs: 200, loop: false },
   // Extra idle: look up / stretch — clearly different from blink
   stretch: { frames: [4, 5, 6, 7, 7, 6, 5, 4, 0], frameMs: 200, loop: false },
-  // Dragging: directional look — never wave (right uses left frames + CSS mirror)
-  drag: { frames: [8, 9, 10, 11, 10, 9], frameMs: 160, loop: true },
-  dragLeft: { frames: [8, 9, 10, 9], frameMs: 150, loop: true },
-  dragRight: { frames: [8, 9, 10, 9], frameMs: 150, loop: true },
-  dragUp: { frames: [4, 5, 6, 7, 6, 5], frameMs: 150, loop: true },
-  dragDown: { frames: [9, 10, 11, 10], frameMs: 150, loop: true },
+  // Dragging: one-way look only. Horizontal right = left frames + CSS scaleX(-1).
+  // Do NOT include look-around frames that glance the opposite way (e.g. 10/11).
+  drag: { frames: [9, 8, 9, 8], frameMs: 320, loop: true },
+  dragLeft: { frames: [9, 8, 9, 8], frameMs: 300, loop: true },
+  dragRight: { frames: [9, 8, 9, 8], frameMs: 300, loop: true },
+  dragUp: { frames: [4, 5, 6, 7, 6, 5], frameMs: 300, loop: true },
+  dragDown: { frames: [1, 2, 1, 2], frameMs: 300, loop: true },
 };
 
 export function dragClipFor(direction: PetLookDirection | null | undefined): PetClip {

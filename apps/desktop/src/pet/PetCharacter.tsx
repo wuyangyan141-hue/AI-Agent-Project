@@ -177,7 +177,8 @@ export function PetCharacter({
     }
     if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
       window.desktop?.movePetBy?.(Math.round(dx), Math.round(dy));
-      const direction = lookFromDelta(dx, dy) ?? lookFromDelta(totalX, totalY);
+      // Prefer total drag direction so tiny reverse jitters don't flip the gaze.
+      const direction = lookFromDelta(totalX, totalY) ?? lookFromDelta(dx, dy);
       if (direction) {
         setBodyLook(direction);
         onBodyDrag?.(true, direction);

@@ -3,7 +3,7 @@ import { parseServerEvent } from '../src/protocol';
 import { atlasBackgroundPosition, PET_FRAME_SETS, usesSpriteAtlas } from '../src/pet/animationAssets';
 import { isBubbleTruncated } from '../src/pet/PetBubble';
 import { canSendMessage, mapServerEventToPet, nextIdleAfterTerminal } from '../src/pet/stateMapping';
-import { DEFAULT_BUBBLE_COPY } from '../src/pet/types';
+import { DEFAULT_BUBBLE_COPY, bubbleHoldMs, SUCCESS_HOLD_MS } from '../src/pet/types';
 
 describe('pet WebSocket state mapping', () => {
   it('maps status states to bubble copy and animation', () => {
@@ -93,6 +93,10 @@ describe('dog atlas sprites', () => {
     expect(PET_FRAME_SETS.drag.frames).not.toContain(16);
     expect(PET_FRAME_SETS.dragUp.frames[0]).toBe(4);
     expect(PET_FRAME_SETS.dragLeft.frames).not.toContain(16);
+    // Horizontal drag must not cycle opposite-glance cells from look-around.
+    expect(PET_FRAME_SETS.dragLeft.frames).not.toContain(10);
+    expect(PET_FRAME_SETS.dragLeft.frames).not.toContain(11);
+    expect(PET_FRAME_SETS.dragRight.frames).toEqual(PET_FRAME_SETS.dragLeft.frames);
   });
 
   it('picks look direction from drag delta', async () => {
@@ -110,5 +114,16 @@ describe('dog atlas sprites', () => {
     expect(atlasBackgroundPosition(3)).toBe('100% 0%');
     expect(atlasBackgroundPosition(4)).toBe('0% 25%');
     expect(atlasBackgroundPosition(19)).toBe('100% 100%');
+  });
+});
+
+describe('pet bubble hold', () => {
+  it('keeps short replies at least the success minimum', () => {
+    expect(bubbleHoldMs('好的', 'success')).toBeGreaterThanOrEqual(SUCCESS_HOLD_MS);
+  });
+
+  it('extends hold for longer answers', () => {
+    const long = '这是一段比较长的复习反馈，用来确认气泡会多留一会儿给你看完。'.repeat(3);
+    expect(bubbleHoldMs(long, 'success')).toBeGreaterThan(SUCCESS_HOLD_MS);
   });
 });

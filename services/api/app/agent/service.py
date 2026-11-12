@@ -50,7 +50,8 @@ class StudyAgent:
         model_name = os.getenv('AGENT_MODEL', 'openai:gpt-4o-mini').removeprefix('openai:')
         classifier = ChatOpenAI(model=model_name, temperature=0).with_structured_output(StudyIntent)
         result = await classifier.ainvoke([
-            ('system', '识别用户当前意图。只有明确要求制定学习计划时选 plan；明确要重新安排未完成任务时选 replan；其他选 chat。'
+            ('system', '识别用户当前意图。明确要求制定学习计划时选 plan；明确重排未完成任务选 replan；'
+             '开始专注选 focus；复习/小测/薄弱点选 review/quiz/weak；问下一步或卡住了选 next；其他选 chat。'
              'goal 填学习主题，不要编造；缺少天数用 3，缺少每天时长用 45 分钟。'),
             *[(item['role'], item['content']) for item in history[-4:]],
             ('user', text),
@@ -74,9 +75,28 @@ class StudyAgent:
         proposal = result if isinstance(result, PlanProposal) else PlanProposal.model_validate(result)
         return validate_plan(proposal, days, minutes_per_day)
 
+    def _demo_coach(self, text: str) -> str:
+        """Deterministic coach: infer the next loop step from local study state."""
+        from ..skills.learning_loop import format_next_step, next_step
+
+        step = next_step()
+        stage = step.get('stage') or step.get('action') or 'ask'
+        reason = {
+            'upload': '我看了下进度：知识库还没有可用资料，没法抽重点或出复习题。',
+            'ask': '资料已在，但你还没问过重点，也没有今日任务。',
+            'plan': '重点已经可以梳理了，接下来需要一份可执行的今日计划。',
+            'focus': '你有未完成任务（或刚确认了计划），现在最该进入专注。',
+            'review': '专注/任务告一段落，用一题复习把刚才的内容钉住。',
+        }.get(stage, '我根据当前任务、资料和复习状态做了推断。')
+        greeting = text.strip('！!。,.，?？ ') in {'你好', '嗨', 'hi', 'hello', '在吗', '早上好', '晚上好'}
+        lead = '嗨，我在～' if greeting else f'收到：「{text[:40]}」。'
+        return f'{lead}\n{reason}\n{format_next_step(step)}'
+
     async def respond(self, text: str, history: list[dict[str, str]], emit: Callable[[str, str], Awaitable[None]] | None = None) -> str:
         if self.mode != 'langchain':
-            return f'收到：{text}。先定一个 20 分钟的小目标，然后告诉我你要从哪一步开始。'
+            if emit:
+                await emit('thinking', '正在根据任务、资料与复习状态推断下一步')
+            return self._demo_coach(text)
         # Keep the MCP connection alive for the full agent invocation. Writes require
         # a separate user confirmation in the UI and are never exposed to the model.
         async with MCPAdapter(mcp) as adapter:

@@ -59,7 +59,7 @@ class KnowledgeService:
             "embedding_id": self.embedding_id,
             "embedding_mode": "local_lexical" if isinstance(self.embeddings, LocalLexicalEmbeddings) else "semantic",
             "answer_mode": "llm" if self.chat_model else "extractive",
-            "supported_files": [".pdf", ".docx", ".txt"], "max_upload_mb": self.settings.max_upload_mb,
+            "supported_files": [".pdf", ".docx", ".pptx", ".txt"], "max_upload_mb": self.settings.max_upload_mb,
         }
 
     def list_documents(self, user_id):
@@ -165,7 +165,7 @@ class KnowledgeService:
         filename = Path(filename.replace("\\", "/")).name[:200]
         suffix = Path(filename).suffix.lower()
         if suffix not in SUPPORTED:
-            raise DocumentError("支持 PDF、Word（.docx）和 TXT；旧版 .doc 请先另存为 .docx。")
+            raise DocumentError("支持 PDF、Word（.docx）、PPT（.pptx）和 TXT；旧版 .ppt/.doc 请先另存为 .pptx/.docx。")
         if len(data) > self.settings.max_upload_mb * 1024 * 1024:
             raise DocumentError(f"文件不能超过 {self.settings.max_upload_mb} MB。")
         sha = hashlib.sha256(data).hexdigest()
@@ -261,16 +261,46 @@ class KnowledgeService:
         r"(这个|这些|该文档|这份|这篇|上述资料|这是什么|讲讲这份|总结这份|看看这份|这份资料|这个的学习)"
     )
 
+    def _expand_query(self, user_id, query, document_ids=None) -> str:
+        """Fold filename + overview keywords into the query for a second lexical pass."""
+        docs = self.list_documents(user_id)
+        ready = [doc for doc in docs if doc["status"] == "ready" and not doc["needs_reindex"]]
+        if document_ids is not None:
+            allowed = set(document_ids)
+            ready = [doc for doc in ready if doc["id"] in allowed]
+        if not ready:
+            return query
+        extras: list[str] = []
+        q_feats = features(query)
+        for doc in ready[:4]:
+            extras.append(doc.get("filename") or "")
+            for key in (doc.get("keywords") or [])[:8]:
+                # Prefer keywords that share characters/tokens with the question.
+                if not q_feats or features(key).intersection(q_feats):
+                    extras.append(key)
+                elif len(extras) < 6:
+                    extras.append(key)
+        extras = [item for item in extras if item]
+        if not extras:
+            return query
+        return query + "\n" + " ".join(dict.fromkeys(extras))
+
     def search(self, user_id, query, document_ids=None, k=None):
         hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
                 for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(query))]
         if hits:
             return hits
-        # Local lexical mode needs shared tokens. Chinese deixis over an English PDF often
-        # scores zero — only then fall back to leading chunks of the selected/available docs.
-        if not self._vague_doc_query.search(query):
-            return []
-        return self._fallback_chunks(user_id, document_ids, k)
+        expanded = self._expand_query(user_id, query, document_ids)
+        if expanded != query:
+            hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
+                    for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(expanded))]
+            if hits:
+                return hits
+        # Soft fallback for deixis / scoped docs / Chinese questions over English PDFs.
+        has_cjk = bool(re.search(r"[\u3400-\u9fff]", query))
+        if self._vague_doc_query.search(query) or document_ids or has_cjk:
+            return self._fallback_chunks(user_id, document_ids, k)
+        return []
 
     def _fallback_chunks(self, user_id, document_ids=None, k=None):
         limit = k or self.settings.top_k
@@ -431,10 +461,15 @@ class KnowledgeService:
             ready = [doc for doc in self.list_documents(user_id) if doc["status"] == "ready" and not doc["needs_reindex"]]
             if ready:
                 names = "、".join(doc["filename"] for doc in ready[:3])
+                hints: list[str] = []
+                for doc in ready[:2]:
+                    hints.extend((doc.get("keywords") or [])[:5])
+                hint_line = "、".join(list(dict.fromkeys(hints))[:8]) if hints else "midterm report、grading criteria"
                 answer = (
-                    f"资料已上传（{names}），但当前问题与正文关键词匹配不上。"
-                    "本地演示默认是词面检索，不是语义理解；请用资料里的原文关键词提问"
-                    "（例如 midterm report、grading criteria、project objective），或配置语义向量后再试。"
+                    f"资料已上传（{names}），但当前问题还没对上正文。"
+                    f"可以点这些关键词再问：{hint_line}。"
+                    "本地默认是词面检索；也可用资料里的原文词提问，或配置语义向量。"
+                    "若资料旁提示需重新索引，请先点重新索引。"
                 )
             else:
                 answer = "当前资料库没有找到足够相关的内容。请上传相关资料、调整问题，或检查文档是否需要重新索引。"
