@@ -1,13 +1,22 @@
 import logging
 import asyncio
+import re
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from .agent.service import StudyAgent
 from .database import store
 from .skills.replan import propose_replan
-from .skills.review_session import begin_review, evaluate_review
+from .skills.review_session import begin_review, daily_quiz, evaluate_review, weak_point_review
+from .skills.learning_loop import format_next_step, mark_study_activity, next_step
+from .knowledge.api import router as knowledge_router
+from .knowledge.documents import DocumentError
+from .knowledge.integration import get_knowledge
+from .knowledge.config import Settings
+from .agent.intent import StudyIntent, explicit_intent
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +26,19 @@ async def lifespan(app: FastAPI):
         pass
     yield
 
-app = FastAPI(title='AI Learning Companion API', version='0.2.0', lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=['http://127.0.0.1:5173', 'http://localhost:5173', 'null'], allow_methods=['GET', 'POST', 'PATCH', 'PUT'], allow_headers=['Content-Type'])
+app = FastAPI(title='AI Learning Companion API', version='0.3.0', lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=['http://127.0.0.1:5173', 'http://localhost:5173', 'null'], allow_methods=['GET', 'POST', 'PATCH', 'PUT', 'DELETE'], allow_headers=['Content-Type','X-User-Id'])
+app.include_router(knowledge_router)
+
+@app.exception_handler(DocumentError)
+async def invalid_document(request, exc):
+    return JSONResponse(status_code=422,content={'detail':str(exc)})
+
+@app.exception_handler(KeyError)
+async def missing_knowledge(request, exc):
+    return JSONResponse(status_code=404,content={'detail':str(exc.args[0])})
+
+Settings.from_env()  # Load the same ignored local configuration for both members.
 agent = StudyAgent(store.connect)
 
 class TaskInput(BaseModel):
@@ -96,7 +116,7 @@ def confirm_plan(draft_id: int) -> dict:
         result = store.apply_plan_draft(db, draft_id)
     if result is None:
         raise HTTPException(409, 'Draft missing or already applied')
-    return result
+    return {**result, 'next_step': next_step('plan')}
 
 @app.post('/focus', status_code=201)
 def start_focus(item: FocusInput) -> dict:
@@ -117,9 +137,13 @@ def get_focus() -> dict:
 @app.post('/focus/{session_id}/finish')
 def stop_focus(session_id: int) -> dict:
     with store.connect() as db:
+        status = store.focus_status(db)
+        minutes = int((status or {}).get('duration_minutes') or 0) if status and status.get('id') == session_id else 0
         if not store.finish_focus(db, session_id):
             raise HTTPException(404, 'Active session not found')
-    return {'id': session_id, 'finished': True}
+    streak = mark_study_activity(minutes)
+    step = next_step('focus')
+    return {'id': session_id, 'finished': True, 'streak': streak, 'next_step': step}
 
 @app.post('/reviews', status_code=201)
 def start_review(item: ReviewInput) -> dict:
@@ -128,6 +152,35 @@ def start_review(item: ReviewInput) -> dict:
         cursor = db.execute('INSERT INTO review_sessions(topic, question) VALUES (?, ?)', (review['topic'], review['question']))
         db.commit()
     return {'id': cursor.lastrowid, **review, 'status': 'waiting'}
+
+@app.post('/reviews/daily-quiz', status_code=201)
+def start_daily_quiz() -> dict:
+    quiz = daily_quiz()
+    created = []
+    with store.connect() as db:
+        for item in quiz['items']:
+            cursor = db.execute(
+                'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
+                (item['topic'], item['question']),
+            )
+            created.append({'id': cursor.lastrowid, **item, 'status': 'waiting'})
+        db.commit()
+    return {**quiz, 'items': created, 'next_step': next_step('review')}
+
+@app.post('/reviews/weak-point', status_code=201)
+def start_weak_point() -> dict:
+    with store.connect() as db:
+        rows = [dict(row) for row in db.execute(
+            'SELECT topic, status FROM review_sessions ORDER BY id DESC LIMIT 20'
+        ).fetchall()]
+    review = weak_point_review(rows)
+    with store.connect() as db:
+        cursor = db.execute(
+            'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
+            (review['topic'], review['question']),
+        )
+        db.commit()
+    return {'id': cursor.lastrowid, **review, 'status': 'waiting', 'next_step': next_step('review')}
 
 @app.post('/reviews/{review_id}/answer')
 def answer_review(review_id: int, item: ReviewAnswer) -> dict:
@@ -139,7 +192,18 @@ def answer_review(review_id: int, item: ReviewAnswer) -> dict:
         db.execute('UPDATE review_sessions SET answer=?, feedback=?, status=? WHERE id=?',
                    (item.answer, result['feedback'], result['result'], review_id))
         db.commit()
-    return {'id': review_id, **result}
+    streak = mark_study_activity(0)
+    return {'id': review_id, **result, 'streak': streak, 'next_step': next_step('review')}
+
+@app.get('/learning/next-step')
+def learning_next_step(after: str | None = None) -> dict:
+    return next_step(after)
+
+@app.get('/learning/streak')
+def learning_streak() -> dict:
+    with store.connect() as db:
+        from .skills.learning_loop import ensure_streak
+        return ensure_streak(db)
 
 @app.post('/plans/replan-drafts', status_code=201)
 def create_replan_draft(request: ReplanInput) -> dict:
@@ -163,7 +227,7 @@ def get_preference(key: str) -> dict:
     if key not in {'pet_name'}:
         raise HTTPException(404, 'Unknown preference')
     with store.connect() as db:
-        return {'key': key, 'value': store.get_preference(db, key, '小鲸')}
+        return {'key': key, 'value': store.get_preference(db, key, '豆豆')}
 
 @app.put('/preferences/{key}')
 def update_preference(key: str, item: PreferenceInput) -> dict:
@@ -177,6 +241,7 @@ def update_preference(key: str, item: PreferenceInput) -> dict:
 async def chat(websocket: WebSocket) -> None:
     await websocket.accept()
     pending_plan = None
+    active_session_id = None
     await websocket.send_json({'type': 'welcome', 'text': '你好！我们开始学习吧。', 'state': 'idle', 'mode': agent.mode})
     try:
         while True:
@@ -187,12 +252,18 @@ async def chat(websocket: WebSocket) -> None:
                 continue
             if isinstance(event, dict) and event.get('type') == 'plan_request':
                 try:
+                    pending_plan = None
+                    requested_session = event.get('session_id',active_session_id)
+                    if requested_session is not None:
+                        get_knowledge().get_session('local-user',requested_session)
                     request = PlanInput.model_validate(event.get('payload'))
                     await websocket.send_json({'type': 'status', 'text': '正在生成计划草稿', 'state': 'thinking'})
                     steps = [step.__dict__ for step in await asyncio.wait_for(agent.generate_plan(request.goal, request.days, request.minutes_per_day), timeout=45)]
                     with store.connect() as db:
                         draft = store.save_plan_draft(db, {'goal': request.goal.strip(), 'steps': steps})
-                    await websocket.send_json({'type': 'plan_draft', 'text': '计划草稿已生成，请检查并确认。', 'state': 'success', 'draft': draft})
+                    saved = get_knowledge().record_exchange('local-user',f'制定计划：{request.goal}','计划草稿已生成，请检查并确认。',requested_session,{'draft':draft,'kind':'plan'})
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({'type': 'plan_draft', 'text': saved['answer'], 'state': 'success', 'draft': draft,'session_id':saved['session_id']})
                 except (ValueError, TypeError):
                     await websocket.send_json({'type': 'error', 'text': '请提供目标、1–14 天和每天 15–240 分钟。', 'state': 'error'})
                 except asyncio.TimeoutError:
@@ -207,19 +278,41 @@ async def chat(websocket: WebSocket) -> None:
             text = event['text'].strip()
             await websocket.send_json({'type': 'status', 'text': '正在思考', 'state': 'thinking'})
             try:
-                with store.connect() as db:
-                    history = store.recent_messages(db)
+                knowledge = get_knowledge()
+                session_id = event.get('session_id',active_session_id)
+                if session_id != active_session_id:
+                    pending_plan = None
+                active_session_id = session_id
+                if session_id is not None and (not isinstance(session_id,str) or not re.fullmatch(r'[a-f0-9]{32}',session_id)):
+                    raise ValueError('对话标识无效，请开启新对话。')
+                document_ids = event.get('document_ids')
+                if document_ids is not None and (not isinstance(document_ids,list) or len(document_ids)>100 or any(not isinstance(item,str) for item in document_ids)):
+                    raise ValueError('资料选择无效。')
+                personal = knowledge.is_personal_request(text)
+                if session_id:
+                    knowledge.get_session('local-user',session_id)
+                    saved_messages = knowledge.db.messages('local-user',session_id)[-12:]
+                    history = [{'role':m['role'],'content':m['content']} for m in saved_messages]
+                    if pending_plan is None and saved_messages and saved_messages[-1]['metadata'].get('pending_plan'):
+                        pending_plan = StudyIntent.model_validate(saved_messages[-1]['metadata']['pending_plan'])
+                else:
+                    history = []
                 async def emit(state: str, message: str) -> None:
                     await websocket.send_json({'type': 'status', 'text': message, 'state': state})
                 if pending_plan is not None:
                     intent = pending_plan.model_copy(update={'goal': text[:200]})
                     pending_plan = None
                 else:
-                    intent = await asyncio.wait_for(agent.detect_intent(text, history), timeout=25)
+                    if (personal or event.get('knowledge') is True) and explicit_intent(text).action=='chat':
+                        intent = StudyIntent()
+                    else:
+                        intent = await asyncio.wait_for(agent.detect_intent(text, history), timeout=25)
                 if intent.action in {'plan', 'replan'}:
                     if intent.action == 'plan' and not intent.goal.strip():
                         pending_plan = intent
-                        await websocket.send_json({'type': 'reply', 'text': '想学习什么内容？请告诉我学习目标。', 'state': 'idle'})
+                        saved = knowledge.record_exchange('local-user',text,'想学习什么内容？请告诉我学习目标。',session_id,{'pending_plan':intent.model_dump()})
+                        active_session_id = saved['session_id']
+                        await websocket.send_json({'type': 'reply', 'text': saved['answer'], 'state': 'idle','session_id':saved['session_id']})
                         continue
                     await emit('tool', '正在调用学习工作流：' + ('study_plan' if intent.action == 'plan' else 'replan'))
                     if intent.action == 'plan':
@@ -234,13 +327,106 @@ async def chat(websocket: WebSocket) -> None:
                             kind = 'replan'
                         store.add_message(db, 'user', text)
                         store.add_message(db, 'assistant', '已生成待确认的' + ('学习计划' if kind == 'plan' else '任务重排') + '草稿。')
-                    await websocket.send_json({'type': 'plan_draft', 'text': '草稿已生成，请检查后确认。', 'state': 'success', 'draft': draft, 'kind': kind})
+                    coach = next_step('plan')
+                    answer = '草稿已生成，请检查后确认。确认后我会提醒你开始专注。\n' + format_next_step(coach)
+                    saved = knowledge.record_exchange('local-user',text,answer,session_id,{'draft':draft,'kind':kind,'next_step':coach})
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({'type': 'plan_draft', 'text': saved['answer'], 'state': 'success', 'draft': draft, 'kind': kind,'session_id':saved['session_id'],'next_step':coach})
+                    continue
+                if intent.action == 'focus':
+                    await emit('tool', '正在开始专注计时')
+                    with store.connect() as db:
+                        try:
+                            focus = store.start_focus(db, None, intent.minutes)
+                        except ValueError as exc:
+                            raise ValueError(str(exc)) from exc
+                    coach = next_step('focus')
+                    answer = f'已开始 {intent.minutes} 分钟专注。加油～\n' + format_next_step(coach)
+                    saved = knowledge.record_exchange('local-user',text,answer,session_id,{'focus':focus,'next_step':coach})
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({'type':'reply','text':saved['answer'],'state':'success','session_id':saved['session_id'],'next_step':coach,'focus':focus})
+                    continue
+                if intent.action in {'review', 'quiz', 'weak'}:
+                    await emit('tool', '正在准备复习')
+                    with store.connect() as db:
+                        history_rows = [dict(row) for row in db.execute(
+                            'SELECT topic, status FROM review_sessions ORDER BY id DESC LIMIT 20'
+                        ).fetchall()]
+                    if intent.action == 'quiz':
+                        payload = daily_quiz()
+                        created = []
+                        with store.connect() as db:
+                            for item in payload['items']:
+                                cursor = db.execute(
+                                    'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
+                                    (item['topic'], item['question']),
+                                )
+                                created.append({'id': cursor.lastrowid, **item})
+                            db.commit()
+                        first = created[0]
+                        answer = f'今日小测共 {len(created)} 题。先看第一题：\n{first["question"]}\n主题：{first["topic"]}'
+                        meta = {'review': first, 'quiz': created, 'next_step': next_step('review')}
+                    elif intent.action == 'weak':
+                        review = weak_point_review(history_rows)
+                        with store.connect() as db:
+                            cursor = db.execute(
+                                'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
+                                (review['topic'], review['question']),
+                            )
+                            db.commit()
+                        answer = f'{review.get("hint","")}\n{review["question"]}\n主题：{review["topic"]}'
+                        meta = {'review': {'id': cursor.lastrowid, **review}, 'next_step': next_step('review')}
+                    else:
+                        review = begin_review(intent.topic or '今日重点')
+                        with store.connect() as db:
+                            cursor = db.execute(
+                                'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
+                                (review['topic'], review['question']),
+                            )
+                            db.commit()
+                        answer = f'{review["question"]}\n主题：{review["topic"]}。直接在聊天里作答即可。'
+                        meta = {'review': {'id': cursor.lastrowid, **review, 'status': 'waiting'}, 'next_step': next_step('review')}
+                    answer = answer + '\n' + format_next_step(meta['next_step'])
+                    saved = knowledge.record_exchange('local-user',text,answer,session_id,meta)
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({'type':'reply','text':saved['answer'],'state':'success','session_id':saved['session_id'],'next_step':meta['next_step']})
+                    continue
+                if intent.action == 'next':
+                    coach = next_step()
+                    answer = format_next_step(coach)
+                    saved = knowledge.record_exchange('local-user',text,answer,session_id,{'next_step':coach})
+                    active_session_id = saved['session_id']
+                    await websocket.send_json({'type':'reply','text':saved['answer'],'state':'success','session_id':saved['session_id'],'next_step':coach})
+                    continue
+                has_documents = any(d['status']=='ready' and not d['needs_reindex'] for d in knowledge.list_documents('local-user'))
+                greeting = text.strip('！!。,.，?？ ') in {'你好','嗨','hi','hello','谢谢','谢谢你'}
+                if personal or event.get('knowledge') is True or (has_documents and not greeting):
+                    await emit('searching','正在查阅知识库和相关记忆')
+                    result = await asyncio.wait_for(run_in_threadpool(knowledge.answer,'local-user',text,session_id,document_ids),timeout=60)
+                    active_session_id = result['session_id']
+                    after = 'overview' if result.get('mode') == 'overview' else 'ask'
+                    coach = next_step(after)
+                    text_out = result['answer']
+                    if '👉 下一步' not in text_out:
+                        text_out = text_out + '\n\n' + format_next_step(coach)
+                    with store.connect() as db:
+                        store.add_message(db,'user',text)
+                        store.add_message(db,'assistant',text_out)
+                    await websocket.send_json({'type':'reply','text':text_out,'state':'success',
+                        'session_id':result['session_id'],'sources':result['sources'],'answer_mode':result['mode'],
+                        'warning':result['warning'],'memories_used':result['memories_used'],'preferences_used':result['preferences_used'],
+                        'next_step':coach,'overview':result.get('overview')})
                     continue
                 reply = await asyncio.wait_for(agent.respond(text, history, emit), timeout=45)
+                coach = next_step()
+                if '👉 下一步' not in reply:
+                    reply = reply + '\n\n' + format_next_step(coach)
                 with store.connect() as db:
                     store.add_message(db, 'user', text)
                     store.add_message(db, 'assistant', reply)
-                await websocket.send_json({'type': 'reply', 'text': reply, 'state': 'success'})
+                saved = knowledge.record_exchange('local-user',text,reply,session_id,{'next_step':coach})
+                active_session_id = saved['session_id']
+                await websocket.send_json({'type': 'reply', 'text': reply, 'state': 'success','session_id':saved['session_id'],'next_step':coach})
             except asyncio.TimeoutError:
                 await websocket.send_json({'type': 'error', 'text': '模型响应超时，请稍后重试。', 'state': 'error'})
             except ValueError as exc:
