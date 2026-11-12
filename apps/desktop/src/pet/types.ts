@@ -12,7 +12,7 @@ export type PetAnimationState =
 
 export type ConnectionPhase = 'connecting' | 'connected' | 'disconnected';
 
-export type ChatLine = { id: string; role: 'user' | 'assistant'; content: string };
+export type ChatLine = import('../knowledge').ChatMessage;
 
 export type BubbleCopy = Record<PetAnimationState, string>;
 

@@ -17,7 +17,7 @@ def test_features_include_chinese_unigrams():
     assert 'report' in features('midterm report pages')
 
 
-def test_soft_score_does_not_drop_zero_overlap_rows():
+def test_local_hash_collision_cannot_create_evidence_without_word_overlap():
     encoder = LocalLexicalEmbeddings()
     content = (
         'The midterm report requires a project objective and grading criteria '
@@ -38,8 +38,7 @@ def test_soft_score_does_not_drop_zero_overlap_rows():
         user_id='u', k=3, min_score=0.10,
     )
     docs = retriever.invoke('完全不同的中文短问')
-    assert len(docs) == 1
-    assert docs[0].metadata['score'] >= 0.10
+    assert docs == []
 
 
 def test_filename_boost_helps_mixed_query():

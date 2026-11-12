@@ -52,7 +52,8 @@ def make_embeddings(settings):
         model=settings.embedding_model,
         api_key=settings.embedding_api_key or settings.llm_api_key or "local-not-required",
         base_url=base_url, max_retries=1, request_timeout=45,
-        check_embedding_ctx_length=False, chunk_size=32,
+        check_embedding_ctx_length=False, chunk_size=settings.embedding_batch_size,
+        model_kwargs={"encoding_format": "float"},
     )
     signature = hashlib.sha256(base_url.encode()).hexdigest()[:12]
     return model, f"openai-compatible:{settings.embedding_model}:{signature}"

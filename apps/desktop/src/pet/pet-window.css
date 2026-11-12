@@ -164,3 +164,5 @@ html.bone-cursor-on input{cursor:text!important}
   border-radius:8px;font-size:12px;color:#6d5f4c;
 }
 .pet-context-menu button:hover{background:#f3efe3}
+
+.pet-citations{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}.pet-citations button{font-size:10px;border:0;border-radius:5px;padding:3px 5px;background:#edf3df;color:#596b49;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

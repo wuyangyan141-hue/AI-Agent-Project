@@ -171,7 +171,6 @@ export function PetWindow() {
               connection={connection}
               sending={sending}
               onSend={sendText}
-              onCancelSending={clearSending}
             />
           </>
         )}

@@ -13,6 +13,10 @@ from .embeddings import LocalLexicalEmbeddings, cosine, features, make_embedding
 from .overview import build_outline, build_summary, extract_keywords
 from .retrieval import SQLiteRetriever
 from .storage import Database, now, uid
+from .grounding import generate, NoEvidence, structured, QueryRewrite
+from .routing import FOLLOWUP, route_request
+
+UNSET = object()
 
 
 SYSTEM_PROMPT = """你是学习桌宠的知识与记忆助手。请用用户的语言回答。
@@ -45,7 +49,7 @@ class KnowledgeService:
                 base_url=settings.llm_base_url, timeout=45, max_retries=1,
             )
         self._index_lock = threading.RLock()
-        self._chat_lock = threading.Lock()
+        self._chat_lock = threading.RLock()
         # An interrupted indexing operation must never be shown as a usable index.
         self.db.execute(
             "UPDATE knowledge_documents SET status='error',error=? WHERE status IN ('processing','reindexing')",
@@ -59,6 +63,7 @@ class KnowledgeService:
             "embedding_id": self.embedding_id,
             "embedding_mode": "local_lexical" if isinstance(self.embeddings, LocalLexicalEmbeddings) else "semantic",
             "answer_mode": "llm" if self.chat_model else "extractive",
+            "retrieval_mode": "bm25" if isinstance(self.embeddings, LocalLexicalEmbeddings) else "hybrid",
             "supported_files": [".pdf", ".docx", ".pptx", ".txt"], "max_upload_mb": self.settings.max_upload_mb,
         }
 
@@ -110,23 +115,37 @@ class KnowledgeService:
         }
 
     def compare_documents(self, user_id, document_ids, query: str = ""):
-        if not document_ids or len(document_ids) < 2:
-            raise ValueError("请至少选择两份资料进行对比。")
-        overviews = [self.document_overview(user_id, document_id) for document_id in document_ids[:4]]
-        shared = set(overviews[0]["keywords"])
-        for item in overviews[1:]:
-            shared &= set(item["keywords"])
-        passages = []
-        if query.strip():
-            for document_id in document_ids[:4]:
-                hits = self.search(user_id, query, [document_id], k=2)
-                passages.extend(hits)
-        return {
-            "documents": overviews,
-            "shared_keywords": sorted(shared)[:12],
-            "passages": passages,
-            "note": "对比基于词面关键词与目录结构；语义对齐需配置向量模型。",
-        }
+        ids=list(dict.fromkeys(document_ids or []))
+        if len(ids)<2 or len(ids)>4:
+            raise ValueError('请选择2–4份不同资料进行对比。')
+        overviews=[self.document_overview(user_id,d) for d in ids]
+        evidence=[];missing=[]
+        for document_id in ids:
+            hits=self.search(user_id,query,[document_id],k=3) if query.strip() else self.summarize_document(user_id,document_id)['sources']
+            if not hits: missing.append(self.get_document(user_id,document_id)['filename'])
+            evidence.extend(hits)
+        sources=self._source_ids(evidence)
+        if missing:
+            answer='以下资料未找到支持该比较问题的证据：'+'、'.join(missing)+'。请调整问题。'
+            mode='no_evidence';warning=None;sources=[]
+        elif self.chat_model:
+            if sum(len(s['snippet']) for s in sources)>self.settings.context_chars:
+                # Balanced quotas keep each selected document represented.
+                per_doc=max(1,self.settings.context_chars//len(ids)//900)
+                sources=self._source_ids([s for d in ids for s in [x for x in sources if x['document_id']==d][:per_doc]])
+            try:
+                answer,sources,_=generate(self.chat_model,query or '比较各份资料的共同点、差异和各自限制，每份资料都必须有证据。',sources)
+                if {s['document_id'] for s in sources}!=set(ids):
+                    raise ValueError('比较结果没有覆盖全部选中文档。')
+                mode='comparison';warning=None
+            except (ValueError,NoEvidence):
+                answer=self._extractive(sources);mode='citation_fallback';warning='比较未通过证据检查，以下按资料展示原文。'
+        else:
+            answer=self._extractive(sources);mode='extractive';warning='尚未配置模型，以下为各份资料的原文，未生成语义比较。'
+        shared=set(overviews[0]['keywords'])
+        for overview in overviews[1:]: shared &= set(overview['keywords'])
+        return {'documents':overviews,'shared_keywords':sorted(shared),'passages':sources,'sources':sources,
+                'answer':answer,'mode':mode,'warning':warning,'note':warning or '比较依据选中资料中的证据。'}
 
     def add_bookmark(self, user_id, document_id, chunk_id=None, note=""):
         self.get_document(user_id, document_id)
@@ -202,6 +221,8 @@ class KnowledgeService:
             summary = build_summary(doc["filename"], keywords, outline, len(chunks))
             # Replace all chunks in one transaction; a failed rebuild cannot leave a partial index.
             with self.db.connect() as conn:
+                conn.execute("DELETE FROM knowledge_summaries WHERE document_id=?", (doc["id"],))
+                conn.execute("UPDATE knowledge_bookmarks SET chunk_id=NULL WHERE document_id=?", (doc["id"],))
                 conn.execute("DELETE FROM knowledge_chunks WHERE document_id=?", (doc["id"],))
                 conn.executemany("INSERT INTO knowledge_chunks VALUES(?,?,?,?,?,?,?)", rows)
                 conn.execute(
@@ -254,76 +275,157 @@ class KnowledgeService:
         return SQLiteRetriever(
             database=self.db, embeddings=self.embeddings, embedding_id=self.embedding_id,
             user_id=user_id, document_ids=document_ids, k=k or self.settings.top_k,
-            min_score=self.settings.min_score,
+            min_score=self.settings.min_score, semantic_min_score=self.settings.semantic_min_score,
         )
 
-    _vague_doc_query = re.compile(
-        r"(这个|这些|该文档|这份|这篇|上述资料|这是什么|讲讲这份|总结这份|看看这份|这份资料|这个的学习)"
-    )
-
-    def _expand_query(self, user_id, query, document_ids=None) -> str:
-        """Fold filename + overview keywords into the query for a second lexical pass."""
-        docs = self.list_documents(user_id)
-        ready = [doc for doc in docs if doc["status"] == "ready" and not doc["needs_reindex"]]
-        if document_ids is not None:
-            allowed = set(document_ids)
-            ready = [doc for doc in ready if doc["id"] in allowed]
-        if not ready:
-            return query
-        extras: list[str] = []
-        q_feats = features(query)
-        for doc in ready[:4]:
-            extras.append(doc.get("filename") or "")
-            for key in (doc.get("keywords") or [])[:8]:
-                # Prefer keywords that share characters/tokens with the question.
-                if not q_feats or features(key).intersection(q_feats):
-                    extras.append(key)
-                elif len(extras) < 6:
-                    extras.append(key)
-        extras = [item for item in extras if item]
-        if not extras:
-            return query
-        return query + "\n" + " ".join(dict.fromkeys(extras))
-
     def search(self, user_id, query, document_ids=None, k=None):
-        hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
+        return [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
                 for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(query))]
-        if hits:
-            return hits
-        expanded = self._expand_query(user_id, query, document_ids)
-        if expanded != query:
-            hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
-                    for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(expanded))]
-            if hits:
-                return hits
-        # Soft fallback for deixis / scoped docs / Chinese questions over English PDFs.
-        has_cjk = bool(re.search(r"[\u3400-\u9fff]", query))
-        if self._vague_doc_query.search(query) or document_ids or has_cjk:
-            return self._fallback_chunks(user_id, document_ids, k)
-        return []
 
-    def _fallback_chunks(self, user_id, document_ids=None, k=None):
-        limit = k or self.settings.top_k
-        docs = self.list_documents(user_id)
-        ready = [doc for doc in docs if doc["status"] == "ready" and not doc["needs_reindex"]]
-        if document_ids is not None:
-            allowed = set(document_ids)
-            ready = [doc for doc in ready if doc["id"] in allowed]
-        if not ready:
-            return []
-        rows = []
-        for doc in ready:
-            rows.extend(self.db.all(
-                "SELECT c.*,d.filename FROM knowledge_chunks c JOIN knowledge_documents d ON d.id=c.document_id "
-                "WHERE c.document_id=? ORDER BY c.position LIMIT ?",
-                (doc["id"], limit),
-            ))
-            if len(rows) >= limit:
-                break
-        return [dict(
-            id=f"S{i + 1}", chunk_id=row["id"], document_id=row["document_id"], filename=row["filename"],
-            page=row["page"], section=row["section"], score=0.0, snippet=row["content"],
-        ) for i, row in enumerate(rows[:limit])]
+    def ensure_session(self, user_id, title='新对话'):
+        session_id = uid()
+        timestamp = now()
+        self.db.execute("INSERT INTO knowledge_sessions VALUES(?,?,?,?,?)", (session_id,user_id,title[:36],timestamp,timestamp))
+        return session_id
+
+    def context(self, user_id, session_id):
+        self.get_session(user_id, session_id)
+        row = self.db.one("SELECT * FROM knowledge_session_context WHERE session_id=?", (session_id,))
+        return {'document_ids': json.loads(row['document_ids_json']) if row else None, 'topic': row['topic'] if row else ''}
+
+    def set_context(self, user_id, session_id, document_ids=UNSET, topic=None):
+        current = self.context(user_id, session_id)
+        ids = current['document_ids'] if document_ids is UNSET else document_ids
+        if ids is not None:
+            for document_id in ids:
+                self.get_document(user_id, document_id)
+            ids = list(dict.fromkeys(ids))
+        self.db.execute(
+            "INSERT INTO knowledge_session_context VALUES(?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET "
+            "document_ids_json=excluded.document_ids_json,topic=excluded.topic,updated_at=excluded.updated_at",
+            (session_id,json.dumps(ids),current['topic'] if topic is None else topic[:2000],now()))
+        return self.context(user_id, session_id)
+
+    def resolve_scope(self, user_id, session_id, document_ids=UNSET):
+        ids = self.context(user_id, session_id)['document_ids'] if session_id and document_ids is UNSET else document_ids
+        ids = None if ids is UNSET else ids
+        if ids is not None:
+            for document_id in ids:
+                self.get_document(user_id, document_id)
+        if session_id:
+            self.set_context(user_id, session_id, ids)
+        return ids
+
+    def standalone_query(self, user_id, question, session_id):
+        if not FOLLOWUP.search(question):
+            return question
+        topic = self.context(user_id, session_id)['topic'] if session_id else ''
+        if not topic:
+            raise NoEvidence('请说明“它”或“这个”指的是哪个知识点。')
+        if self.chat_model:
+            history=self.db.messages(user_id,session_id)[-4:]
+            try:
+                rewritten=structured(self.chat_model,QueryRewrite,
+                    '仅将当前追问改写成独立检索问题，不回答问题。使用给定主题和必要历史解析代词；'
+                    '不能确定指代对象时 ambiguous=true，不猜测新实体。不要改变用户选择的资料范围。',
+                    {'topic':topic,'question':question,'history':[{'role':m['role'],'content':m['content'][:500]} for m in history]})
+                if rewritten.ambiguous: raise NoEvidence('请说明这次追问中的“它”指哪个概念。')
+                return rewritten.question
+            except NoEvidence:
+                raise
+            except Exception as exc:
+                raise NoEvidence('暂时无法明确这次追问，请把知识点名称写完整。') from exc
+        # Offline context reconstruction, without recursively appending prior follow-ups.
+        return topic + '\n追问：' + question
+
+    def _chunk_sources(self, user_id, document_id):
+        doc = self.get_document(user_id, document_id)
+        if doc['status'] != 'ready' or doc['embedding_id'] != self.embedding_id:
+            raise DocumentError('这份资料尚未就绪，请先重新索引。')
+        return [dict(id='C'+row['id'], chunk_id=row['id'],document_id=document_id,
+                     filename=doc['filename'],page=row['page'],section=row['section'],
+                     snippet=row['content'],score=1.0,evidence_kind='overview')
+                for row in self.document_chunks(user_id,document_id)]
+
+    @staticmethod
+    def _source_ids(sources):
+        return [dict(source,id=f'S{i+1}') for i,source in enumerate(sources)]
+
+    def _summary_group(self, user_id, document_id, sources):
+        raw = json.dumps(sources,ensure_ascii=False)
+        key = hashlib.sha256(('summary-v3:'+('model' if self.chat_model else 'offline')+':'+self.settings.llm_model+':'+self.settings.llm_base_url+':'+raw).encode()).hexdigest()
+        cached = self.db.one('SELECT payload_json FROM knowledge_summaries WHERE cache_key=?',(key,))
+        if cached:
+            return json.loads(cached['payload_json'])
+        numbered = self._source_ids(sources)
+        if self.chat_model:
+            text, used, quotes = generate(self.chat_model,'总结这些章节的关键概念、结论和限制，覆盖各部分。',numbered)
+            kept=[]
+            for source in used:
+                excerpts=[q['quote'] for q in quotes if q['source_id']==source['id']]
+                claims=[q['claim'] for q in quotes if q['source_id']==source['id']]
+                kept.append(dict(source,snippet='\n'.join(dict.fromkeys(excerpts)),digest='；'.join(dict.fromkeys(claims))))
+        else:
+            kept=[dict(source,digest=re.sub(r'\s+',' ',source['snippet'])[:160]) for source in sources]
+        payload={'sources':kept,'processed_chunks':len(sources)}
+        self.db.execute('INSERT OR REPLACE INTO knowledge_summaries VALUES(?,?,?,?)',(key,document_id,json.dumps(payload,ensure_ascii=False),now()))
+        return payload
+
+    def summarize_document(self, user_id, document_id):
+        all_sources=self._chunk_sources(user_id,document_id)
+        groups=[]; current=[]; size=0
+        for source in all_sources:
+            if current and size+len(source['snippet'])>self.settings.context_chars:
+                groups.append(current);current=[];size=0
+            current.append(source);size+=len(source['snippet'])
+        if current: groups.append(current)
+        mapped=[]
+        for group in groups:
+            mapped.extend(self._summary_group(user_id,document_id,group)['sources'])
+        # Summaries carry exact original excerpts through every reduction level.
+        if self.chat_model:
+            while sum(len(x['snippet'])+len(x.get('digest','')) for x in mapped)>self.settings.context_chars:
+                reduced=[]
+                for offset in range(0,len(mapped),8):
+                    batch=mapped[offset:offset+8]
+                    reduced.extend(self._summary_group(user_id,document_id,batch)['sources'])
+                if len(reduced)>=len(mapped):
+                    raise DocumentError('摘要未能压缩到上下文预算，请拆分资料后重试。')
+                mapped=reduced
+            numbered=self._source_ids(mapped)
+            answer,used,quotes=generate(self.chat_model,'汇总全文的主题、各部分重点、结论和限制；不要声称未出现的信息。',numbered)
+            mode='summary'
+            warning=None
+        else:
+            used=self._source_ids(mapped)
+            answer='全文结构与原文导览（尚未配置生成模型）：\n\n'+'\n\n'.join(
+                f"{x['filename']} · "+(f"第{x['page']}页" if x['page'] else x['section'] or '正文')+f"：{x['digest']} [{x['id']}]" for x in used)
+            quotes=[];mode='extractive_overview';warning='这是覆盖全文片段的原文导览，不是模型生成的综合摘要。'
+        return {'answer':answer,'sources':used,'mode':mode,'warning':warning,'quotes':quotes,
+                'coverage':{'processed_chunks':len(all_sources),'total_chunks':len(all_sources),'document_ids':[document_id]}}
+
+    def learning_context(self, user_id, goal, document_ids=None):
+        ready=[d for d in self.list_documents(user_id) if d['status']=='ready' and not d['needs_reindex']]
+        ids=document_ids
+        if ids is None:
+            hits=self.search(user_id,goal,None,k=4)
+            ids=list(dict.fromkeys(s['document_id'] for s in hits))
+            if not ids and re.search('这份|这个|资料|讲义|文档',goal):
+                if len(ready)==1: ids=[ready[0]['id']]
+                elif len(ready)>1: raise ValueError('请先选择要用于学习计划的资料。')
+        topics=[];sources=[]
+        for document_id in ids or []:
+            self.get_document(user_id,document_id)
+            overview=self.document_overview(user_id,document_id)
+            topics.extend(overview['keywords'][:6])
+            # Whole-document summary is cached and retains original evidence snapshots.
+            sources.extend(self.summarize_document(user_id,document_id)['sources'])
+        budget=[];size=0
+        for source in sources:
+            if size+len(source['snippet'])>self.settings.context_chars: continue
+            budget.append(source);size+=len(source['snippet'])
+        return {'document_ids':ids or [],'topics':list(dict.fromkeys(topics))[:12],
+                'sources':self._source_ids(budget)}
 
     def preferences(self, user_id):
         return {row["key"]: row["value"] for row in self.db.all("SELECT * FROM knowledge_preferences WHERE user_id=?", (user_id,))}
@@ -388,129 +490,65 @@ class KnowledgeService:
         self.get_session(user_id, session_id)
         self.db.execute("DELETE FROM knowledge_sessions WHERE id=? AND user_id=?", (session_id, user_id))
 
-    def answer(self, user_id, question, session_id=None, document_ids=None):
+    def answer(self, user_id, question, session_id=None, document_ids=UNSET, operation='auto'):
         with self._chat_lock:
-            return self._answer(user_id, question, session_id, document_ids)
+            return self._answer(user_id,question,session_id,document_ids,operation)
 
-    _overview_query = re.compile(
-        r"(这份|这篇|该|这个).{0,6}(资料|文档|文件|讲义|pdf).{0,8}(讲什么|讲了什么|关于什么|是什么|概述|摘要|目录|重点)|"
-        r"(总结|概述).{0,6}(这份|这篇|该).{0,6}(资料|文档)|资料讲什么|文档讲什么",
-        re.I,
-    )
-
-    def _answer(self, user_id, question, session_id, document_ids):
-        history = []
-        if session_id:
-            self.get_session(user_id, session_id)
-            history = self.db.messages(user_id, session_id)[-8:]
-        query = question
-        if re.match(r"^(那|它|这个|这些|刚才|上述|then\b|what about\b)", question, re.I):
-            previous = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-            query = previous + "\n" + question
-        # When the UI scopes a document, fold its filename into deixis so English PDFs remain findable.
-        if document_ids and re.search(r"这个|这些|该文档|这份|这篇|上述资料", question):
-            names = []
-            for document_id in document_ids:
-                try:
-                    names.append(self.get_document(user_id, document_id)["filename"])
-                except KeyError:
-                    continue
-            if names:
-                query = " ".join(names) + "\n" + query
-        personal_request = self.is_personal_request(question)
-        if not personal_request and self._overview_query.search(question):
-            target_ids = document_ids
-            if not target_ids:
-                ready = [d for d in self.list_documents(user_id) if d["status"] == "ready" and not d["needs_reindex"]]
-                target_ids = [ready[0]["id"]] if ready else []
-            if target_ids:
-                overview = self.document_overview(user_id, target_ids[0])
-                outline_lines = "\n".join(
-                    f"• {item['title']}" + (f"（第 {item['page']} 页）" if item.get("page") else "")
-                    + (f"：{item['preview']}" if item.get("preview") else "")
-                    for item in overview["outline"]
-                ) or "• （暂无稳定目录）"
-                keys = "、".join(overview["keywords"]) or "（暂无）"
-                answer = (
-                    f"{overview['summary']}\n\n目录要点：\n{outline_lines}\n\n"
-                    f"可点关键词：{keys}\n点关键词即可继续追问，或说「帮我制定复习这份资料的学习计划」。"
-                )
-                payload = {
-                    "session_id": session_id, "answer": answer, "sources": [],
-                    "mode": "overview", "warning": None, "preferences_used": self.preferences(user_id),
-                    "memories_used": [], "overview": overview, "next_step": "ask",
-                }
-                return self.record_exchange(user_id, question, answer, session_id, payload)
-        sources = [] if personal_request else self.search(user_id, query, document_ids)
-        used_fallback = bool(sources) and all(source.get("score", 1) == 0 for source in sources)
-        preferences = self.preferences(user_id)
-        memories = self.search_memories(user_id, question)
-        mode, warning = "llm", None
-        if personal_request:
-            if not memories and re.search(r"记得我|记住了什么|关于我", question):
-                memories = self.memories(user_id)[:5]
-            labels = {"language": "回答语言", "study_time": "学习时段", "daily_minutes": "每天可用时间", "explanation_style": "讲解方式"}
-            parts = []
-            if preferences:
-                parts.append("你已保存的学习偏好：\n" + "\n".join(f"• {labels.get(key, key)}：{value}" for key, value in preferences.items()))
-            if memories:
-                parts.append("找到的相关个人记忆：\n" + "\n".join(f"• {memory['key']}：{memory['content']}" for memory in memories))
-            answer = "\n\n".join(parts) or "还没有找到相关的个人信息。你可以在“偏好与记忆”页面明确保存学习偏好或目标。"
-            mode, warning = "memory", "以下来自你明确保存的个人信息，不是课程文档中的结论。"
-        elif not sources:
-            ready = [doc for doc in self.list_documents(user_id) if doc["status"] == "ready" and not doc["needs_reindex"]]
-            if ready:
-                names = "、".join(doc["filename"] for doc in ready[:3])
-                hints: list[str] = []
-                for doc in ready[:2]:
-                    hints.extend((doc.get("keywords") or [])[:5])
-                hint_line = "、".join(list(dict.fromkeys(hints))[:8]) if hints else "midterm report、grading criteria"
-                answer = (
-                    f"资料已上传（{names}），但当前问题还没对上正文。"
-                    f"可以点这些关键词再问：{hint_line}。"
-                    "本地默认是词面检索；也可用资料里的原文词提问，或配置语义向量。"
-                    "若资料旁提示需重新索引，请先点重新索引。"
-                )
-            else:
-                answer = "当前资料库没有找到足够相关的内容。请上传相关资料、调整问题，或检查文档是否需要重新索引。"
-            mode = "no_evidence"
-        elif self.chat_model is None:
-            answer = self._extractive(sources)
-            mode = "extractive"
-            warning = (
-                "词面检索未直接命中，已改展示该资料开头原文；请用资料中的英文关键词继续追问。"
-                if used_fallback else
-                "尚未配置对话模型；以下是检索原文，不是 AI 生成的答案。"
-            )
-        else:
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", SYSTEM_PROMPT), MessagesPlaceholder("history"), ("human", "{question}"),
-            ])
-            history_messages = [HumanMessage(m["content"]) if m["role"] == "user" else AIMessage(m["content"]) for m in history]
+    def _answer(self, user_id, question, session_id, document_ids, operation):
+        session_id=session_id or self.ensure_session(user_id,question)
+        document_ids=self.resolve_scope(user_id,session_id,document_ids)
+        history=self.db.messages(user_id,session_id)[-8:]
+        preferences=self.preferences(user_id)
+        memories=self.search_memories(user_id,question)
+        personal=self.is_personal_request(question)
+        route=operation if operation!='auto' else route_request(question,forced=True,has_documents=True)
+        base={'sources':[],'warning':None,'preferences_used':preferences,'memories_used':memories}
+        if personal and route not in {'summary','compare'}:
+            if not memories and re.search(r'记得我|记住了什么|关于我',question): memories=self.memories(user_id)[:5]
+            answer='你保存的学习偏好：\n'+json.dumps(preferences,ensure_ascii=False)+'\n相关个人记忆：\n'+'\n'.join(m['key']+'：'+m['content'] for m in memories)
+            return self.record_exchange(user_id,question,answer,session_id,dict(base,mode='memory',memories_used=memories,warning='个人信息只用于个性化，不作为课程证据。'))
+        ready=[d for d in self.list_documents(user_id) if d['status']=='ready' and not d['needs_reindex']]
+        ids=document_ids if document_ids is not None else [d['id'] for d in ready]
+        if route in {'summary','compare'}:
+            if (route=='summary' and len(ids)!=1) or (route=='compare' and not 2<=len(ids)<=4):
+                return self.record_exchange(user_id,question,'请在知识库选择一份资料总结，或选择2–4份资料进行比较。',session_id,dict(base,mode='clarification'))
             try:
-                response = (prompt | self.chat_model).invoke({
-                    "question": question, "context": json.dumps(sources, ensure_ascii=False),
-                    "preferences": json.dumps(preferences, ensure_ascii=False),
-                    "memories": json.dumps(memories, ensure_ascii=False), "history": history_messages,
-                })
-                content = response.content
-                answer = content if isinstance(content, str) else "\n".join(
-                    part.get("text", "") for part in content if isinstance(part, dict)
-                )
-                cited = set(re.findall(r"\[(S\d+)\]", answer))
-                valid = {source["id"] for source in sources}
-                if not answer.strip() or not cited or not cited.issubset(valid):
-                    answer = self._extractive(sources)
-                    mode, warning = "citation_fallback", "模型没有返回有效引用，已改为显示检索原文，请核对资料。"
+                result=self.summarize_document(user_id,ids[0]) if route=='summary' else self.compare_documents(user_id,ids,question)
             except Exception:
-                answer = self._extractive(sources)
-                mode, warning = "model_error", "对话模型调用失败。请检查本地模型配置、密钥或网络；以下仍可查看检索原文。"
-        payload = {
-            "session_id": session_id, "answer": answer, "sources": sources,
-            "mode": mode, "warning": warning, "preferences_used": preferences,
-            "memories_used": memories,
-        }
-        return self.record_exchange(user_id, question, answer, session_id, payload)
+                return self.record_exchange(user_id,question,'全文处理未完成，请检查模型配置后重试；已完成的章节摘要会保留，重试可继续。',session_id,dict(base,mode='model_error'))
+            self.set_context(user_id,session_id,document_ids,topic=question)
+            return self.record_exchange(user_id,question,result['answer'],session_id,{**base,**result})
+        try:
+            query=self.standalone_query(user_id,question,session_id)
+        except NoEvidence as exc:
+            return self.record_exchange(user_id,question,str(exc),session_id,dict(base,mode='clarification'))
+        sources=self.search(user_id,query,document_ids)
+        # Keep history and context below a fixed character budget.
+        bounded=[];size=0
+        for source in sources:
+            if size+len(source['snippet'])>self.settings.context_chars: break
+            bounded.append(source);size+=len(source['snippet'])
+        sources=self._source_ids(bounded)
+        mode='llm';warning=None;quotes=[]
+        if not sources:
+            answer='当前选定资料没有找到足够相关的证据。请调整问题或资料范围；也可以切换到普通聊天。'
+            mode='no_evidence'
+        elif self.chat_model is None:
+            answer=self._extractive(sources);mode='extractive';warning='尚未配置对话模型；以下为相关原文。跨语言提问建议启用语义向量。'
+        else:
+            try:
+                answer,sources,quotes=generate(self.chat_model,question,sources,preferences,memories,
+                    [{'role':m['role'],'content':m['content'][:700]} for m in history[-4:]])
+            except NoEvidence:
+                answer='找到一些相关片段，但不足以支持这个问题的答案。请补充资料或缩小问题范围。';sources=[];mode='no_evidence'
+            except ValueError:
+                answer=self._extractive(sources);mode='citation_fallback';warning='回答未通过原文或证据检查，已改为显示检索原文。'
+            except Exception:
+                answer=self._extractive(sources);mode='model_error';warning='对话模型调用失败，请检查密钥、地址及模型权限；以下为相关原文。'
+        if mode not in {'no_evidence','model_error'}:
+            topic=question if not FOLLOWUP.search(question) else self.context(user_id,session_id)['topic']
+            self.set_context(user_id,session_id,document_ids,topic=topic)
+        return self.record_exchange(user_id,question,answer,session_id,dict(base,sources=sources,mode=mode,warning=warning,quotes=quotes,retrieval_query=query))
 
     def record_exchange(self, user_id, question, answer, session_id=None, metadata=None):
         timestamp = now()
@@ -519,7 +557,7 @@ class KnowledgeService:
         else:
             session_id = uid()
             self.db.execute("INSERT INTO knowledge_sessions VALUES(?,?,?,?,?)", (session_id, user_id, question[:36], timestamp, timestamp))
-        payload = {"sources": [], "mode": "agent", **(metadata or {}), "session_id": session_id, "answer": answer}
+        payload = {"sources": [], "mode": "agent", **(metadata or {}), "session_id": session_id, "answer": answer, "context": self.context(user_id,session_id)}
         with self.db.connect() as conn:
             conn.execute("INSERT INTO knowledge_messages VALUES(?,?,?,?,?,?)", (uid(), session_id, "user", question, "{}", timestamp))
             conn.execute("INSERT INTO knowledge_messages VALUES(?,?,?,?,?,?)", (
@@ -530,6 +568,8 @@ class KnowledgeService:
 
     @staticmethod
     def is_personal_request(question):
+        if re.search(r'根据|按我的|结合我的',question) and re.search(r'解释|总结|讲解|比较|资料',question):
+            return False
         return bool(re.search(
             r"记得我|记住了什么|保存的个人记忆|我的.*(偏好|习惯|目标|学习时段|可用时间|学习时间)|我(?!们).*(喜欢|习惯)|关于我的.*(信息|记忆)", question,
         ))

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 from .integration import get_knowledge
-from .service import KnowledgeService
+from .service import KnowledgeService, UNSET
 
 router = APIRouter(prefix='/knowledge', tags=['knowledge and memory'])
 Service = Annotated[KnowledgeService, Depends(get_knowledge)]
@@ -118,6 +118,7 @@ def original(document_id: str,service: Service,user: User):
 class CompareBody(BaseModel):
     document_ids: list[str] = Field(min_length=2, max_length=4)
     query: str = Field(default='', max_length=400)
+    session_id: str | None = None
 
 
 class BookmarkBody(BaseModel):
@@ -129,7 +130,10 @@ class BookmarkBody(BaseModel):
 @router.post('/compare')
 def compare(body: CompareBody, service: Service, user: User):
     try:
-        return service.compare_documents(user, body.document_ids, body.query)
+        result=service.compare_documents(user,body.document_ids,body.query)
+        session_id=body.session_id or service.ensure_session(user,'比较资料')
+        service.set_context(user,session_id,body.document_ids,topic=body.query or '比较所选资料')
+        return service.record_exchange(user,body.query or '比较所选资料',result['answer'],session_id,result)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -154,7 +158,7 @@ def search(body: Query,service: Service,user: User):
 
 @router.post('/chat')
 def chat(body: Question,service: Service,user: User):
-    return service.answer(user,body.question,body.session_id,body.document_ids)
+    return service.answer(user,body.question,body.session_id,body.document_ids if 'document_ids' in body.model_fields_set else UNSET)
 
 @router.get('/sessions')
 def sessions(service: Service,user: User):
@@ -192,3 +196,15 @@ def forget(memory_id: str,service: Service,user: User):
 @router.post('/memories/search')
 def search_memories(body: Query,service: Service,user: User):
     return service.search_memories(user,body.query,body.k)
+
+
+class SessionContextUpdate(BaseModel):
+    document_ids: list[str] | None = Field(default=None,max_length=100)
+
+@router.get('/sessions/{session_id}/context')
+def session_context(session_id: str,service: Service,user: User):
+    return service.context(user,session_id)
+
+@router.put('/sessions/{session_id}/context')
+def update_session_context(session_id: str,body: SessionContextUpdate,service: Service,user: User):
+    return service.set_context(user,session_id,body.document_ids)

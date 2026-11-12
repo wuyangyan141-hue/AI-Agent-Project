@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { ChatLine } from './types';
+import { conversation } from '../chatStore';
 
 /** Bubble-thread transcript above the pet (keeps speech-bubble look). */
 export function PetChatLog({
@@ -36,6 +37,8 @@ export function PetChatLog({
           >
             <span className="pet-bubble-who">{line.role === 'user' ? '你' : '豆豆'}</span>
             <p className="pet-bubble-text">{line.content}</p>
+            {line.metadata?.warning&&<small>{line.metadata.warning}</small>}
+            {!!line.metadata?.sources?.length&&<div className="pet-citations">{line.metadata.sources.map(source=><button type="button" key={source.id} onClick={()=>{conversation.update({openCitation:{token:crypto.randomUUID(),source}});onOpenFullChat();}}>[{source.id}] {source.filename}{source.page?` · ${source.page}页`:''}</button>)}</div>}
             <span className="pet-bubble-arrow" aria-hidden="true" />
           </div>
         ))}

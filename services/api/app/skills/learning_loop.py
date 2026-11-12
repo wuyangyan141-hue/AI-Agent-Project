@@ -5,7 +5,7 @@ import json
 from datetime import date, timedelta
 
 
-def learning_status() -> dict:
+def learning_status(session_id=None) -> dict:
     from ..database import store
 
     try:
@@ -29,7 +29,7 @@ def learning_status() -> dict:
         open_tasks = [task for task in tasks if not task['done']]
         focus = store.focus_status(db) or {'id': None, 'remaining_seconds': 0}
         reviews = db.execute(
-            "SELECT id, topic, question, status FROM review_sessions ORDER BY id DESC LIMIT 8"
+            "SELECT id, topic, question, status FROM review_sessions WHERE session_id IS ? ORDER BY id LIMIT 8",(session_id,)
         ).fetchall()
         waiting_review = next((dict(row) for row in reviews if row['status'] == 'waiting'), None)
         streak = ensure_streak(db)
@@ -95,9 +95,9 @@ def mark_study_activity(minutes: int = 0) -> dict:
         return ensure_streak(db)
 
 
-def next_step(after: str | None = None) -> dict:
+def next_step(after: str | None = None, session_id=None) -> dict:
     """Return the next suggested action in the companion loop."""
-    status = learning_status()
+    status = learning_status(session_id) if session_id else learning_status()
     if not status['has_documents']:
         return {
             'stage': 'upload',

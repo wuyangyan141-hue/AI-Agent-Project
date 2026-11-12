@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { messageEvent, parseServerEvent } from '../protocol';
 import { mapServerEventToPet } from './stateMapping';
+import { conversation, useConversation, scopeFields } from '../chatStore';
 import {
   DEFAULT_BUBBLE_COPY,
   ERROR_HOLD_MS,
@@ -22,7 +23,9 @@ export function usePetSocket() {
   const [animation, setAnimation] = useState<PetAnimationState>('idle');
   const [bubbleText, setBubbleText] = useState(DEFAULT_BUBBLE_COPY.idle);
   const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState<ChatLine[]>([]);
+  const shared=useConversation();
+  const messages=shared.messages;
+  const setMessages=conversation.setMessages;
   const socket = useRef<WebSocket | null>(null);
   const session = useRef<string | null>(null);
   const sync = useRef<BroadcastChannel | null>(null);
@@ -76,35 +79,18 @@ export function usePetSocket() {
   }
 
   useEffect(() => {
-    const channel = new BroadcastChannel(SYNC_CHANNEL);
-    sync.current = channel;
-    channel.onmessage = (event) => {
-      const data = event.data as SyncPayload;
-      if (!data || typeof data !== 'object') return;
-      if (data.kind === 'session') session.current = data.sessionId;
-      if (data.kind === 'lines' && Array.isArray(data.lines)) setMessages(data.lines.slice(-40));
-    };
-
     let cancelled = false;
 
     const handleMessage = (raw: string) => {
       try {
         const data = parseServerEvent(raw);
+        if(data.type==='welcome')return;
+        if(!conversation.receive(data))return;
+        if(data.type==='status')armSendWatchdog();
         const mapped = mapServerEventToPet(data, sendingRef.current);
-        if (mapped.sessionId) {
-          session.current = mapped.sessionId;
-          channel.postMessage({ kind: 'session', sessionId: mapped.sessionId } satisfies SyncPayload);
-        }
         setAnimation(mapped.animation);
         setBubbleText(mapped.bubbleText);
         publishLocal(mapped.animation, mapped.bubbleText);
-        if (mapped.assistantMessage) {
-          setMessages((old) => {
-            const lines = [...old.slice(-39), { id: crypto.randomUUID(), role: 'assistant' as const, content: mapped.assistantMessage! }];
-            channel.postMessage({ kind: 'lines', lines } satisfies SyncPayload);
-            return lines;
-          });
-        }
         if (mapped.finished || data.type === 'reply' || data.type === 'error' || data.type === 'plan_draft') {
           clearSending();
           if (mapped.finished) applyTerminalHold(mapped.animation, mapped.bubbleText);
@@ -156,22 +142,27 @@ export function usePetSocket() {
       if (holdTimer.current) window.clearTimeout(holdTimer.current);
       if (sendWatchdog.current) window.clearTimeout(sendWatchdog.current);
       socket.current?.close();
-      channel.close();
-      sync.current = null;
+
+
     };
   }, []);
+
+  useEffect(()=>{sendingRef.current=Boolean(shared.pending);setSending(Boolean(shared.pending));},[shared.pending]);
+  useEffect(()=>{
+    if(!shared.status)return;
+    const {state,text}=shared.status;
+    setAnimation(state);setBubbleText(text);
+    if(state==='success'||state==='error')applyTerminalHold(state,text);
+  },[shared.status?.state,shared.status?.text]);
 
   function sendText(text: string) {
     const trimmed = text.trim();
     const live = socket.current;
     if (!trimmed || sendingRef.current || !live || live.readyState !== WebSocket.OPEN) return false;
-    live.send(JSON.stringify({ ...JSON.parse(messageEvent(trimmed)), session_id: session.current }));
-    const userLine = { id: crypto.randomUUID(), role: 'user' as const, content: trimmed };
-    setMessages((old) => {
-      const lines = [...old.slice(-39), userLine];
-      sync.current?.postMessage({ kind: 'lines', lines } satisfies SyncPayload);
-      return lines;
-    });
+    const current=conversation.getSnapshot();
+    const requestId=conversation.begin(trimmed);
+    if(!requestId)return false;
+    live.send(JSON.stringify({...JSON.parse(messageEvent(trimmed)),session_id:current.sessionId,request_id:requestId,...scopeFields(current.scope)}));
     sendingRef.current = true;
     setSending(true);
     setConnection('connected');

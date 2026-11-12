@@ -60,7 +60,8 @@ def test_model_intent_contract_without_external_api(monkeypatch):
     class FakeModel:
         def __init__(self, **kwargs):
             assert kwargs['temperature'] == 0
-        def with_structured_output(self, schema):
+        def with_structured_output(self, schema, method=None):
+            assert method == "function_calling"
             assert schema is StudyIntent
             return self
         async def ainvoke(self, messages):

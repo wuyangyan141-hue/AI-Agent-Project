@@ -39,6 +39,11 @@ def connect(path: str | None = None) -> sqlite3.Connection:
             answer TEXT, feedback TEXT, status TEXT NOT NULL DEFAULT 'waiting'
         );
     ''')
+    review_columns = {row['name'] for row in connection.execute('PRAGMA table_info(review_sessions)')}
+    if 'session_id' not in review_columns:
+        connection.execute('ALTER TABLE review_sessions ADD COLUMN session_id TEXT')
+    if 'snapshot_json' not in review_columns:
+        connection.execute("ALTER TABLE review_sessions ADD COLUMN snapshot_json TEXT NOT NULL DEFAULT '{}'")
     columns = {row['name'] for row in connection.execute('PRAGMA table_info(tasks)')}
     if 'scheduled_day' not in columns:
         connection.execute('ALTER TABLE tasks ADD COLUMN scheduled_day INTEGER')

@@ -62,32 +62,20 @@ def get_focus_timer() -> dict:
 def start_review_question(topic: str) -> dict:
     """Create one guided review question for a topic."""
     from ..skills.review_session import begin_review
+    from ..skills.review_session import save_review, public_review
     review = begin_review(topic)
     with store.connect() as db:
-        cursor = db.execute(
-            'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
-            (review['topic'], review['question']),
-        )
-        db.commit()
-    return {'id': cursor.lastrowid, **review, 'status': 'waiting'}
+        return public_review(save_review(db,review))
 
 @mcp.tool()
 def write_review_result(review_id: int, answer: str) -> dict:
-    """Grade and persist a review answer for an open review session."""
-    from ..skills.review_session import evaluate_review
+    """Grade an answer against the original saved question and evidence."""
+    from ..skills.review_session import grade_saved_review
     from ..skills.learning_loop import mark_study_activity
     with store.connect() as db:
-        row = db.execute('SELECT topic, status FROM review_sessions WHERE id=?', (review_id,)).fetchone()
-        if row is None or row['status'] != 'waiting':
-            raise ValueError('Review missing or already answered')
-        result = evaluate_review(row['topic'], answer)
-        db.execute(
-            'UPDATE review_sessions SET answer=?, feedback=?, status=? WHERE id=?',
-            (answer, result['feedback'], result['result'], review_id),
-        )
-        db.commit()
+        result=grade_saved_review(db,review_id,answer)
     mark_study_activity(0)
-    return {'id': review_id, **result}
+    return result
 
 @mcp.tool()
 def get_learning_next_step(after: str = '') -> dict:
