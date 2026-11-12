@@ -1,0 +1,66 @@
+.dog-avatar{
+  display:inline-flex;position:relative;align-items:center;justify-content:center;
+  width:100%;height:100%;isolation:isolate;
+}
+.dog-body{
+  position:relative;display:block;width:100%;height:100%;
+  transform-origin:50% 88%;
+}
+.dog-art{
+  display:block;width:100%;height:100%;object-fit:contain;
+  pointer-events:none;user-select:none;-webkit-user-drag:none;
+  filter:drop-shadow(0 5px 5px #5b432b13);
+  transform-origin:50% 88%;
+}
+/* 尾巴近似点：素材尾巴在右后侧，用局部摆动表现摇尾巴 */
+.dog-tail{
+  position:absolute;right:14%;bottom:30%;
+  width:22%;height:18%;
+  transform-origin:12% 70%;
+  pointer-events:none;
+  background:radial-gradient(ellipse at 30% 60%,#d9b48a 0 42%,transparent 68%);
+  opacity:0;filter:blur(.2px);
+}
+
+.dog-idle .dog-art{animation:puppy-breathe 3.4s ease-in-out infinite}
+.dog-thinking .dog-art{animation:puppy-think 1.5s ease-in-out infinite}
+.dog-searching .dog-art{animation:puppy-sniff 1.05s ease-in-out infinite}
+.dog-tool .dog-art{animation:puppy-work .9s ease-in-out infinite}
+.dog-success .dog-art{animation:puppy-happy 0.85s ease-in-out infinite}
+.dog-success .dog-tail{opacity:.9;animation:puppy-wag .28s ease-in-out infinite}
+.dog-error .dog-art{animation:puppy-sad 1.7s ease-in-out infinite;filter:saturate(.72) brightness(.96) drop-shadow(0 5px 5px #5b432b13)}
+
+@keyframes puppy-breathe{
+  0%,100%{transform:scale(1,1)}
+  50%{transform:scale(1.015,1.025)}
+}
+@keyframes puppy-think{
+  0%,100%{transform:rotate(0deg)}
+  40%{transform:rotate(-6deg)}
+  70%{transform:rotate(-3deg)}
+}
+@keyframes puppy-sniff{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  35%{transform:rotate(-2deg) scale(1.01)}
+  70%{transform:rotate(2deg) scale(1.01)}
+}
+@keyframes puppy-work{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  50%{transform:rotate(-3deg) scale(1.02)}
+}
+@keyframes puppy-happy{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  50%{transform:rotate(2deg) scale(1.03,1.01)}
+}
+@keyframes puppy-wag{
+  0%,100%{transform:rotate(-18deg) skewX(-4deg)}
+  50%{transform:rotate(22deg) skewX(6deg)}
+}
+@keyframes puppy-sad{
+  0%,100%{transform:rotate(0deg) scale(1)}
+  50%{transform:rotate(-2deg) scale(.99)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .dog-art,.dog-tail{animation:none!important}
+}

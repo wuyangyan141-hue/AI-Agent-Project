@@ -8,4 +8,13 @@ describe('WebSocket protocol', () => {
     const event = parseServerEvent(JSON.stringify({ type: 'plan_draft', kind: 'replan', text: '草稿', state: 'success', draft: { id: 2, schedule: [] } }));
     expect(event.kind).toBe('replan');
   });
+  it('keeps citations and session IDs on knowledge replies',()=>{
+    const source={id:'S1',document_id:'doc',chunk_id:'chunk',filename:'notes.pdf',page:2,section:null,snippet:'Evidence',score:.8};
+    const reply=parseServerEvent(JSON.stringify({type:'reply',text:'Answer [S1]',state:'success',session_id:'session',sources:[source],answer_mode:'extractive'}));
+    expect(reply.sources?.[0].page).toBe(2);expect(reply.session_id).toBe('session');
+  });
+  it('rejects invented page zero and malformed source collections',()=>{
+    expect(()=>parseServerEvent(JSON.stringify({type:'reply',text:'a',state:'success',sources:'bad'}))).toThrow();
+    expect(()=>parseServerEvent(JSON.stringify({type:'reply',text:'a',state:'success',sources:[{id:'S1',document_id:'doc',filename:'file',snippet:'text',page:0}]}))).toThrow();
+  });
 });

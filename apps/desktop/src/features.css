@@ -1,1 +1,14 @@
-.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}.controls input{max-width:260px}.controls label{display:flex;align-items:center;gap:5px}.controls label input{width:85px}.draft{padding:14px;margin:14px 0;background:#e5f0ff;border:1px solid #aac7e7;border-radius:10px}.draft button{margin-right:8px}li button{margin-left:10px;padding:5px 10px}textarea{width:100%;min-height:85px;padding:8px;border:1px solid #aac7e7;border-radius:8px}
+/* Shared member-2 workflow accents; behavior stays in the existing components. */
+.draft button+button{background:#e5ebd8;color:#879b70}.controls input{max-width:280px}.panel-body>section li button{font-size:10px;padding:5px 9px;margin-left:10px}.panel-body>section input[type=checkbox]{accent-color:#8ba371}.panel-body>section>div>strong{font-size:24px;color:#8ea379;margin-right:16px}
+.keyword-chips{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:4px;padding-left:28px}
+.keyword-chips button{background:#eef1e4;color:#5f6b4d;font-size:11px;padding:5px 10px;border-radius:999px}
+.keyword-chips button:hover:not(:disabled){background:#e2e8d4}
+.doc-summary{display:block;margin-top:4px;font-style:normal;color:#8a8e76;font-size:11px;line-height:1.45;max-width:42ch}
+.compare-pick{display:flex;align-items:center;margin-right:2px}
+.next-step-card{margin:0 0 12px;padding:12px 14px;border:1px solid #e4e7d8;border-radius:12px;background:#f7f8f1;display:grid;gap:6px;grid-template-columns:1fr auto;align-items:center}
+.next-step-card strong{grid-column:1/-1;color:#5d684c;font-size:13px}
+.next-step-card p{grid-column:1/-1;margin:0;color:#8a8e76;font-size:12px;line-height:1.45}
+.next-step-card button{justify-self:start}
+.streak-chip,.streak-banner{font-size:11px;color:#73835f}
+.streak-banner{margin:0 0 12px}
+.source-footer-actions{display:flex;gap:10px;align-items:center}

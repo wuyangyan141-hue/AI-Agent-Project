@@ -8,14 +8,17 @@ import asyncio
 
 
 def test_explicit_intent_routes_only_clear_commands():
-    assert explicit_intent('帮我制定复习数据库的学习计划，3天每天30分钟').model_dump() == {
-        'action': 'plan', 'goal': '数据库', 'days': 3, 'minutes_per_day': 30,
-    }
+    plan = explicit_intent('帮我制定复习数据库的学习计划，3天每天30分钟')
+    assert plan.action == 'plan' and plan.goal == '数据库' and plan.days == 3 and plan.minutes_per_day == 30
     assert explicit_intent('重新安排未完成任务，2天每天60分钟').action == 'replan'
     assert explicit_intent('数据库索引有什么用途？').action == 'chat'
     assert explicit_intent('帮我制定复习数据库的学习计划，99天').action == 'chat'
-    assert explicit_intent('帮我制定学习计划').model_dump()['goal'] == ''
+    assert explicit_intent('帮我制定学习计划').goal == ''
     assert explicit_intent('怎么制定学习计划？').action == 'chat'
+    assert explicit_intent('开始专注 25 分钟').action == 'focus'
+    assert explicit_intent('今日小测').action == 'quiz'
+    assert explicit_intent('开始复习 B+树').action == 'review'
+    assert explicit_intent('复习数据库').action == 'chat'
 
 
 def test_chat_plan_and_replan_need_confirmation(tmp_path, monkeypatch):
