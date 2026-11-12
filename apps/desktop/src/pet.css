@@ -79,3 +79,19 @@ html,body,#root{width:100%;height:100%;margin:0;background:transparent;overflow:
 .pet-window.chat-open{justify-content:flex-start;padding-top:2px}
 .pet-window.chat-open .pet-figure{width:200px;height:230px}
 .pet-window.chat-open .pet-drag{width:168px;height:168px;margin-left:-84px}
+
+/* Bone pointer across the pet window; keep a text caret while typing. */
+.pet-window,
+.pet-window button,
+.pet-window .pet-handle,
+.pet-window .pet-figure,
+.pet-window .pet-figure:active {
+  cursor: url('./assets/bone-cursor.svg') 5 5, pointer;
+}
+.pet-window input,
+.pet-window textarea {
+  cursor: text;
+}
+.pet-window button:disabled {
+  cursor: not-allowed;
+}
