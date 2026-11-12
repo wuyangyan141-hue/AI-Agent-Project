@@ -4,8 +4,10 @@ import { CompactChatInput } from './CompactChatInput';
 import { ConnectionStatus } from './ConnectionStatus';
 import { PetBubble } from './PetBubble';
 import { PetCharacter } from './PetCharacter';
+import { PetChatLog } from './PetChatLog';
 import { PetContextMenu } from './PetContextMenu';
 import { QuickActions } from './QuickActions';
+import { useBoneCursor } from './useBoneCursor';
 import { usePetSocket } from './usePetSocket';
 import { usePetWindowLayout } from './usePetWindow';
 import { DEFAULT_BUBBLE_COPY } from './types';
@@ -15,11 +17,12 @@ import './pet-character.css';
 const HANDLE_DRAG_THRESHOLD = 4;
 
 export function PetWindow() {
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [lookDirection, setLookDirection] = useState<PetLookDirection | null>(null);
-  const { connection, animation, bubbleText, sending, sendText } = usePetSocket();
+  const { connection, animation, bubbleText, sending, sendText, messages, clearSending } = usePetSocket();
   const rootRef = usePetWindowLayout(chatOpen);
+  const { layerRef, boneCursorUrl } = useBoneCursor(true);
   const handleDrag = useRef<{
     id: number;
     lastX: number;
@@ -73,7 +76,8 @@ export function PetWindow() {
     const dy = event.screenY - track.lastY;
     if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
       window.desktop?.movePetBy?.(Math.round(dx), Math.round(dy));
-      setLookDirection(lookFromDelta(dx, dy) ?? lookFromDelta(totalX, totalY));
+      // Prefer total drag direction so gaze stays with the pull, not micro jitters.
+      setLookDirection(lookFromDelta(totalX, totalY) ?? lookFromDelta(dx, dy));
       track.lastX = event.screenX;
       track.lastY = event.screenY;
     }
@@ -102,6 +106,15 @@ export function PetWindow() {
       data-state={animation}
       data-look={lookDirection || undefined}
     >
+      <img
+        ref={layerRef}
+        className="pet-bone-cursor"
+        src={boneCursorUrl}
+        alt=""
+        width={20}
+        height={20}
+        draggable={false}
+      />
       <div className="pet-top" data-interactive>
         <span
           className="pet-handle"
@@ -119,10 +132,24 @@ export function PetWindow() {
       </div>
 
       <div className="pet-stack">
-        <PetBubble
-          text={dragging ? '带我去那边～' : bubbleText || DEFAULT_BUBBLE_COPY.idle}
-          onOpenFullChat={openFullChat}
-        />
+        {chatOpen ? (
+          <PetChatLog
+            messages={messages}
+            liveText={
+              dragging
+                ? '带我去那边～'
+                : animation === 'thinking' || animation === 'searching' || animation === 'tool' || animation === 'talking'
+                  ? bubbleText
+                  : undefined
+            }
+            onOpenFullChat={openFullChat}
+          />
+        ) : (
+          <PetBubble
+            text={dragging ? '带我去那边～' : DEFAULT_BUBBLE_COPY.idle}
+            onOpenFullChat={openChatPanel}
+          />
+        )}
         <div className="pet-drag-zone" data-interactive title="按住小狗身体拖动；单击挥手开聊天">
           <PetCharacter
             state={animation}
@@ -140,7 +167,12 @@ export function PetWindow() {
         {chatOpen && (
           <>
             <ConnectionStatus phase={connection} />
-            <CompactChatInput connection={connection} sending={sending} onSend={sendText} />
+            <CompactChatInput
+              connection={connection}
+              sending={sending}
+              onSend={sendText}
+              onCancelSending={clearSending}
+            />
           </>
         )}
       </div>

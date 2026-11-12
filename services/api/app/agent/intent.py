@@ -42,17 +42,26 @@ def explicit_intent(text: str) -> StudyIntent:
         focus_minutes = int(focus_match.group(1)) if focus_match else 25
         if 1 <= focus_minutes <= 240:
             return StudyIntent(action='focus', minutes=focus_minutes)
-    if re.search(r'今日小测|今天小测|来几道题|小测验', text):
+    if re.search(r'今日小测|今天小测|来几道题|小测验|我想小测|我要小测|小测一下|开始小测|来个小测|做个小测', text):
         return StudyIntent(action='quiz')
     if re.search(r'薄弱点|薄弱环节|错题回顾|回顾薄弱', text):
         return StudyIntent(action='weak')
-    if re.search(r'下一步|接下来做什么|学习闭环|继续学习', text):
+    if re.search(
+        r'下一步|接下来做什么|学习闭环|继续学习|该学什么|该做什么|怎么办|卡住了|帮我想想|不知道学什么|推荐下一步|我该怎么学',
+        text,
+    ):
         return StudyIntent(action='next')
-    if re.search(r'开始复习|来一题复习|做一题复习|交互式复习|复习一下|复习题', text):
+    # “我来回答复习题” is a coach prompt echo — not a command to start a new review.
+    if re.search(r'我来回答|直接作答|提交答案|这是我的回答', text):
+        return StudyIntent()
+    if re.search(r'开始复习|来一题复习|做一题复习|交互式复习|复习一下|我想复习|我要复习|复习题', text):
         topic_match = re.search(r'(?:开始复习|来一题复习|做一题复习|复习一下|复习题)\s*(.+)$', text)
         topic = ''
         if topic_match:
             topic = topic_match.group(1).strip(' ：:，,。.!！？?')
             topic = re.sub(r'^(?:一下|今天|今日|知识点|题目)?', '', topic).strip()
+            topic = re.sub(r'^：\s*', '', topic).strip()
+        if topic in {'重点', '今日重点', '知识点'}:
+            topic = '今日重点'
         return StudyIntent(action='review', topic=topic or '今日重点')
     return StudyIntent()

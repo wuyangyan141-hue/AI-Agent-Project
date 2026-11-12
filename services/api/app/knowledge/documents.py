@@ -10,14 +10,57 @@ class DocumentError(ValueError):
     pass
 
 
-SUPPORTED = {".pdf", ".docx", ".txt"}
+SUPPORTED = {".pdf", ".docx", ".txt", ".pptx", ".ppt"}
 MAX_TEXT = 800_000
+
+
+def _parse_pptx(data: bytes, filename: str) -> list[Document]:
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    with ZipFile(BytesIO(data)) as archive:
+        if sum(item.file_size for item in archive.infolist()) > 120 * 1024 * 1024:
+            raise DocumentError("PPT 解压后过大，请拆分后上传。")
+    try:
+        deck = Presentation(BytesIO(data))
+    except Exception as exc:
+        raise DocumentError("无法打开 PPTX，请确认文件未损坏。") from exc
+    if len(deck.slides) > 200:
+        raise DocumentError("单份 PPT 最多支持 200 页，请拆分后上传。")
+    pages: list[Document] = []
+    total = 0
+    for index, slide in enumerate(deck.slides, start=1):
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text = "\n".join(p.text.strip() for p in shape.text_frame.paragraphs if p.text and p.text.strip())
+                if text:
+                    lines.append(text)
+            if shape.has_table:
+                for row in shape.table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text and cell.text.strip()]
+                    if cells:
+                        lines.append(" | ".join(cells))
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                continue
+            if getattr(shape, "has_chart", False):
+                lines.append("[图表]")
+        content = "\n".join(lines).strip()
+        total += len(content)
+        if total > MAX_TEXT:
+            raise DocumentError("文字超过 80 万字符，请拆分文档。")
+        if content:
+            pages.append(Document(
+                page_content=content,
+                metadata={"page": index, "section": f"第 {index} 页幻灯片", "filename": filename},
+            ))
+    return pages
 
 
 def parse_document(data: bytes, filename: str) -> list[Document]:
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED:
-        raise DocumentError("支持 PDF、Word（.docx）和 TXT；旧版 .doc 请先另存为 .docx。")
+        raise DocumentError("支持 PDF、Word（.docx）、PPT（.pptx）和 TXT；旧版 .ppt/.doc 请先另存为 .pptx/.docx。")
     if not data:
         raise DocumentError("文件为空，请选择包含文字的文档。")
     pages = []
@@ -54,6 +97,10 @@ def parse_document(data: bytes, filename: str) -> list[Document]:
                     blocks.append(item.text)
             text = "\n\n".join(block for block in blocks if block.strip())
             pages.append(Document(page_content=text, metadata={"page": None, "section": "Word 正文"}))
+        elif suffix == ".pptx":
+            pages.extend(_parse_pptx(data, filename))
+        elif suffix == ".ppt":
+            raise DocumentError("暂不支持旧版二进制 .ppt，请在 PowerPoint 中另存为 .pptx 后再上传。")
         else:
             if b"\x00" in data:
                 raise DocumentError("TXT 包含二进制内容，请使用 UTF-8 或 GB18030 编码的纯文本。")

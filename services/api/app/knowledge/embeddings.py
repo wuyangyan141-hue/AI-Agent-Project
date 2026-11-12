@@ -7,12 +7,15 @@ import numpy as np
 
 def features(text: str) -> set[str]:
     """Lexical features only; this is deliberately not advertised as semantic embedding."""
-    result = set(re.findall(r"[a-z0-9][a-z0-9_-]*", text.lower()))
+    result = set()
+    for token in re.findall(r"[a-z0-9][a-z0-9_-]*", text.lower()):
+        if len(token) >= 2 or token.isdigit():
+            result.add(token)
     for run in re.findall(r"[\u3400-\u9fff]+", text):
+        # 1-grams help short Chinese questions; 2/3-grams keep phrase signal.
+        result.update(run)
         for n in (2, 3):
             result.update(run[i:i + n] for i in range(len(run) - n + 1))
-        if len(run) == 1:
-            result.add(run)
     return result
 
 
@@ -36,7 +39,8 @@ class LocalLexicalEmbeddings(Embeddings):
 
 def make_embeddings(settings):
     if settings.embedding_provider == "local":
-        return LocalLexicalEmbeddings(), "lexical-hash-v1-2048"
+        # Bump id when features()/dimension change so stored vectors reindex.
+        return LocalLexicalEmbeddings(), "lexical-hash-v2-2048"
     if settings.embedding_provider != "openai":
         raise ValueError("EMBEDDING_PROVIDER 仅支持 local 或 openai。")
     if not settings.embedding_model:

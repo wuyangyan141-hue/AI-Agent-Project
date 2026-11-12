@@ -8,6 +8,13 @@ from datetime import date, timedelta
 def learning_status() -> dict:
     from ..database import store
 
+    try:
+        from .review_session import repair_vague_waiting_reviews
+
+        repair_vague_waiting_reviews()
+    except Exception:
+        pass
+
     with store.connect() as db:
         docs_ready = False
         try:
@@ -22,7 +29,7 @@ def learning_status() -> dict:
         open_tasks = [task for task in tasks if not task['done']]
         focus = store.focus_status(db) or {'id': None, 'remaining_seconds': 0}
         reviews = db.execute(
-            "SELECT id, topic, status FROM review_sessions ORDER BY id DESC LIMIT 8"
+            "SELECT id, topic, question, status FROM review_sessions ORDER BY id DESC LIMIT 8"
         ).fetchall()
         waiting_review = next((dict(row) for row in reviews if row['status'] == 'waiting'), None)
         streak = ensure_streak(db)
@@ -134,12 +141,20 @@ def next_step(after: str | None = None) -> dict:
             'status': status,
         }
     if status['waiting_review']:
+        topic = status['waiting_review']['topic']
+        question = (status['waiting_review'].get('question') or '').strip()
+        preview = (question[:42] + '…') if len(question) > 42 else question
         return {
             'stage': 'review',
             'action': 'review_answer',
             'title': '继续刚才的复习题',
-            'suggestion': f'主题：{status["waiting_review"]["topic"]}。在聊天里直接作答即可。',
-            'prompt': f'我来回答复习题：{status["waiting_review"]["topic"]}',
+            'suggestion': (
+                f'主题：{topic}。'
+                + (f'题目：{preview}。' if preview else '')
+                + '请在输入框直接作答；评分按是否覆盖要点，不是词频。'
+            ),
+            'prompt': '',
+            'placeholder': f'关于「{topic}」，结合资料我觉得……',
             'status': status,
         }
     if after in {'plan', 'focus'} or status['open_tasks'] > 0:
@@ -178,10 +193,17 @@ def next_step(after: str | None = None) -> dict:
 def format_next_step(step: dict) -> str:
     title = step.get('title') or '下一步'
     suggestion = step.get('suggestion') or ''
-    prompt = step.get('prompt') or ''
+    prompt = (step.get('prompt') or '').strip()
+    placeholder = (step.get('placeholder') or '').strip()
     streak = (step.get('status') or {}).get('streak') or {}
     streak_note = ''
     current = int(streak.get('current_streak') or 0)
     if current >= 1:
         streak_note = f'\n连续学习 {current} 天，继续保持～'
-    return f'👉 下一步：{title}\n{suggestion}\n可以说：「{prompt}」{streak_note}'
+    if prompt:
+        tip = f'可以说：「{prompt}」'
+    elif placeholder:
+        tip = f'在输入框写：{placeholder}'
+    else:
+        tip = '在下方输入框继续即可。'
+    return f'👉 下一步：{title}\n{suggestion}\n{tip}{streak_note}'

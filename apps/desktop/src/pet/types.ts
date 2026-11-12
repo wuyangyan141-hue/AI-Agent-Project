@@ -28,8 +28,20 @@ export const DEFAULT_BUBBLE_COPY: BubbleCopy = {
 
 export const PET_WINDOW_WIDTH = 320;
 export const BUBBLE_MAX_LINES = 5;
-export const SUCCESS_HOLD_MS = 2200;
-export const ERROR_HOLD_MS = 2600;
+/** Minimum time a reply stays in the pet bubble before returning to idle. */
+export const SUCCESS_HOLD_MS = 8000;
+export const ERROR_HOLD_MS = 5000;
+/** Extra reading time for longer answers (~4 CJK chars/sec), capped. */
+export const BUBBLE_READ_MS_PER_CHAR = 250;
+export const BUBBLE_HOLD_MAX_MS = 28000;
+
+/** How long to keep a finished reply visible, scaled by text length. */
+export function bubbleHoldMs(text: string, kind: 'success' | 'error' = 'success'): number {
+  const base = kind === 'success' ? SUCCESS_HOLD_MS : ERROR_HOLD_MS;
+  const chars = text.replace(/\s+/g, '').length;
+  const reading = Math.round(chars * BUBBLE_READ_MS_PER_CHAR);
+  return Math.min(BUBBLE_HOLD_MAX_MS, Math.max(base, reading));
+}
 
 export function isPetAnimationState(value: string): value is PetAnimationState {
   return ['idle', 'thinking', 'searching', 'tool', 'talking', 'success', 'error'].includes(value);

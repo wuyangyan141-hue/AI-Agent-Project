@@ -7,7 +7,10 @@ let petWindow: BrowserWindow | null = null;
 let quitting = false;
 const preload = path.join(__dirname, 'preload.cjs');
 const tabs = new Set(['chat', 'tasks', 'library', 'memory', 'history', 'settings']);
-const development = process.argv.includes('--companion-dev');
+// Prefer Vite when --companion-dev is passed (npm run dev), or when no packaged UI exists.
+const development =
+  process.argv.includes('--companion-dev') ||
+  (!fs.existsSync(path.join(__dirname, '../dist/index.html')) && !app.isPackaged);
 const PET_WIDTH = 320;
 const PET_HEIGHT_COLLAPSED = 360;
 /** Soft-restart pet (+ reload chat): Ctrl/⌘ + Shift + R */
@@ -139,7 +142,7 @@ function resizePet(width: number, height: number) {
   if (!petWindow || petWindow.isDestroyed()) return;
   if (!Number.isFinite(width) || !Number.isFinite(height)) return;
   const nextWidth = Math.round(Math.min(360, Math.max(300, width)));
-  const nextHeight = Math.round(Math.min(720, Math.max(300, height)));
+  const nextHeight = Math.round(Math.min(860, Math.max(300, height)));
   const bounds = petWindow.getBounds();
   const next = clampToWorkArea(bounds.x + bounds.width - nextWidth, bounds.y + bounds.height - nextHeight, nextWidth, nextHeight);
   if (next.x === bounds.x && next.y === bounds.y && next.width === bounds.width && next.height === bounds.height) return;

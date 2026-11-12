@@ -21,11 +21,15 @@ export function usePetWindowLayout(chatOpen: boolean) {
   }, [chatOpen]);
 
   useEffect(() => {
+    // Whole pet shell must receive mouse events so the bone cursor overlay can track.
+    // Transparent pixels *outside* the shell still click through to the desktop.
     const move = (event: MouseEvent) => {
-      window.desktop?.setPetClickThrough(!(event.target instanceof Element && event.target.closest('[data-interactive]')));
+      const el = event.target instanceof Element ? event.target : null;
+      const overPet = Boolean(el?.closest('[data-pet-shell], [data-interactive]'));
+      window.desktop?.setPetClickThrough(!overPet);
     };
-    window.addEventListener('mousemove', move);
-    return () => window.removeEventListener('mousemove', move);
+    window.addEventListener('mousemove', move, true);
+    return () => window.removeEventListener('mousemove', move, true);
   }, []);
 
   return rootRef;

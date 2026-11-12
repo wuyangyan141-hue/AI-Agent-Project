@@ -37,11 +37,15 @@ class SQLiteRetriever(BaseRetriever):
         for row in rows:
             score = cosine(query_vector, row["vector"])
             if isinstance(self.embeddings, LocalLexicalEmbeddings):
-                overlap = tokens.intersection(features(row["content"]))
-                if not overlap:
-                    continue
-                # Query coverage keeps short Chinese questions retrievable in long passages.
-                score = 0.25 * score + 0.75 * len(overlap) / max(1, len(tokens))
+                content_feats = features(row["content"])
+                title_feats = features(" ".join(filter(None, [row.get("filename"), row.get("section")])))
+                overlap = tokens.intersection(content_feats)
+                title_overlap = tokens.intersection(title_feats)
+                coverage = len(overlap) / max(1, len(tokens))
+                # Soft hit: keep pure cosine when overlap is empty (e.g. CN query / EN PDF).
+                score = 0.35 * score + 0.55 * coverage + 0.10 * (len(title_overlap) / max(1, len(tokens)))
+                if title_overlap:
+                    score = max(score, 0.12 + 0.08 * min(1.0, len(title_overlap) / max(1, len(tokens))))
             if score >= self.min_score:
                 ranked.append((score, row))
         ranked.sort(key=lambda item: item[0], reverse=True)

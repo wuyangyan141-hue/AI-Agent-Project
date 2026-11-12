@@ -5,7 +5,16 @@ html,body,#root{
   font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
 }
 *{box-sizing:border-box}
+html.bone-cursor-on textarea,
+html.bone-cursor-on input{cursor:text!important}
+.pet-bone-cursor{
+  position:absolute;left:0;top:0;z-index:99999;
+  width:20px;height:20px;opacity:0;pointer-events:none;
+  image-rendering:auto;user-select:none;will-change:transform;
+  filter:drop-shadow(0 0.5px 1px #0005);
+}
 .pet-shell{
+  position:relative;
   width:320px;
   max-width:100%;
   margin:0 auto;
@@ -23,16 +32,16 @@ html,body,#root{
 .pet-handle{
   -webkit-app-region:no-drag;
   font-size:10px;letter-spacing:1px;color:#8f876f;
-  padding:0 12px;border-radius:999px;background:#fbf8edcc;opacity:.55;cursor:grab;
+  padding:0 12px;border-radius:999px;background:#fbf8edcc;opacity:.55;
   touch-action:none;user-select:none;
 }
-.pet-shell.is-dragging .pet-handle{cursor:grabbing;opacity:1}
+.pet-shell.is-dragging .pet-handle{opacity:1}
 .pet-shell:hover .pet-handle{opacity:1}
 .pet-close{
   -webkit-app-region:no-drag;
   position:absolute;right:0;top:0;width:20px;height:20px;
   border:0;border-radius:50%;background:#fcf9eff0;color:#a6977d;
-  font-size:16px;line-height:18px;cursor:pointer;opacity:0;
+  font-size:16px;line-height:18px;opacity:0;
 }
 .pet-shell:hover .pet-close{opacity:1}
 .pet-stack{
@@ -53,12 +62,40 @@ html,body,#root{
   margin:0;
   font-size:12px;line-height:1.45;
   white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;line-clamp:5;overflow:hidden;
+  text-align:left;
+  max-height:180px;overflow:auto;
+}
+.pet-bubble-text-idle{
+  text-align:center;max-height:none;overflow:visible;
 }
 .pet-bubble-more{
   margin-top:8px;border:0;background:#eef2e4;color:#596b49;
-  border-radius:8px;padding:5px 8px;font-size:11px;cursor:pointer;
+  border-radius:8px;padding:5px 8px;font-size:11px;
 }
+.pet-bubble-thread{
+  -webkit-app-region:no-drag;
+  width:100%;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+}
+.pet-bubble-thread-scroll{
+  width:100%;max-height:260px;overflow:auto;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:2px 2px 4px;
+}
+.pet-bubble-mini{
+  width:min(100%,300px);
+}
+.pet-bubble-who{
+  display:block;font-size:10px;color:#8a8e76;margin-bottom:4px;text-align:left;
+}
+.pet-bubble-user{
+  background:#eef2e4;border-color:#d5dec8;
+  align-self:flex-end;
+}
+.pet-bubble-user .pet-bubble-arrow{background:#eef2e4;border-color:#d5dec8}
+.pet-bubble-user .pet-bubble-who{color:#596b49;text-align:right}
+.pet-bubble-assistant{align-self:flex-start}
+.pet-bubble-live{outline:1px dashed #c5d0a8}
 .pet-bubble-arrow{
   position:absolute;left:50%;bottom:-6px;width:12px;height:12px;
   margin-left:-6px;transform:rotate(45deg);
@@ -68,12 +105,9 @@ html,body,#root{
   -webkit-app-region:no-drag;
   width:200px;height:200px;
   display:flex;align-items:flex-end;justify-content:center;
-  cursor:grab;
   touch-action:none;
 }
-.pet-drag-zone .pet-character{-webkit-app-region:no-drag;cursor:grab;touch-action:none}
-.pet-shell.is-dragging .pet-drag-zone,
-.pet-shell.is-dragging .pet-drag-zone .pet-character{cursor:grabbing}
+.pet-drag-zone .pet-character{-webkit-app-region:no-drag;touch-action:none}
 .pet-quick{
   -webkit-app-region:no-drag;
   display:flex;align-items:center;justify-content:center;gap:8px;
@@ -81,7 +115,7 @@ html,body,#root{
 }
 .pet-quick button{
   border:0;background:#fffcf2ee;color:#84745c;
-  padding:5px 10px;border-radius:8px;cursor:pointer;font:inherit;
+  padding:5px 10px;border-radius:8px;font:inherit;
   box-shadow:0 1px 4px #6b4d2814;
 }
 .pet-quick button:hover{background:#f0ecdc;color:#4d6147}
@@ -98,22 +132,27 @@ html,body,#root{
 .pet-connection-disconnected .pet-connection-dot{background:#c46a5a}
 .pet-chat-form{
   -webkit-app-region:no-drag;
-  width:100%;display:flex;gap:8px;align-items:flex-end;
+  width:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;
 }
 .pet-chat-form textarea{
-  flex:1 1 auto;min-width:0;resize:none;min-height:38px;max-height:72px;
+  flex:1 1 auto;min-width:0;resize:none;min-height:44px;max-height:88px;
   border:1px solid #e1dccb;border-radius:12px;background:#fffefa;color:#5d6450;
   padding:9px 10px;font:inherit;font-size:12px;line-height:1.35;outline:none;
-  overflow:hidden;
+  overflow:auto;
 }
 .pet-chat-form textarea:focus{border-color:#b7c39a}
 .pet-chat-form textarea:disabled{opacity:.6}
+.pet-chat-actions{display:flex;gap:6px;flex:0 0 auto}
 .pet-chat-form button{
   flex:0 0 auto;border:0;border-radius:12px;background:#7f9164;color:#fff;
-  padding:10px 14px;font-size:12px;cursor:pointer;
+  padding:10px 14px;font-size:12px;
 }
 .pet-chat-form button:hover:not(:disabled){background:#6a7d52}
-.pet-chat-form button:disabled{opacity:.45;cursor:not-allowed}
+.pet-chat-form button:disabled{opacity:.45}
+.pet-chat-cancel{background:#d9d2c2!important;color:#6d5f4c!important}
+.pet-chat-hint{
+  flex:1 0 100%;margin:0;font-size:11px;color:#8d846f;line-height:1.3;
+}
 .pet-context-menu{
   position:fixed;z-index:20;min-width:148px;
   display:flex;flex-direction:column;gap:2px;
@@ -122,6 +161,6 @@ html,body,#root{
 }
 .pet-context-menu button{
   border:0;background:transparent;text-align:left;padding:8px 10px;
-  border-radius:8px;font-size:12px;color:#6d5f4c;cursor:pointer;
+  border-radius:8px;font-size:12px;color:#6d5f4c;
 }
 .pet-context-menu button:hover{background:#f3efe3}
