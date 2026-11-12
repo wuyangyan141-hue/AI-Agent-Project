@@ -1,0 +1,3 @@
+.pet-character,.pet-character.idle,.pet-character.thinking,.pet-character.searching,.pet-character.tool,.pet-character.success,.pet-character.error{animation:none;transform:none;filter:none}
+.pet-character{width:170px;height:170px;padding:0;display:block;overflow:hidden}
+.pet-sprite{display:block;width:100%;height:100%;background-size:400% 500%;background-repeat:no-repeat;filter:drop-shadow(0 3px 3px #24547d44)}
