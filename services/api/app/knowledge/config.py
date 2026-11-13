@@ -39,8 +39,13 @@ class Settings:
             llm_base_url=os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             embedding_provider=os.getenv("EMBEDDING_PROVIDER", "local"),
             embedding_model=os.getenv("EMBEDDING_MODEL", ""),
-            embedding_api_key=os.getenv("EMBEDDING_API_KEY", ""),
-            embedding_base_url=os.getenv("EMBEDDING_BASE_URL", ""),
+            embedding_api_key=os.getenv("EMBEDDING_API_KEY")
+            or os.getenv("LLM_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or os.getenv("DASHSCOPE_API_KEY", ""),
+            embedding_base_url=os.getenv("EMBEDDING_BASE_URL")
+            or os.getenv("LLM_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL", ""),
             max_upload_mb=int(os.getenv("MAX_UPLOAD_MB", "15")),
             top_k=int(os.getenv("RETRIEVAL_TOP_K", "4")),
             min_score=float(os.getenv("RETRIEVAL_MIN_SCORE", "0.16")),

@@ -1,14 +1,41 @@
 /* Shared member-2 workflow accents; behavior stays in the existing components. */
 .draft button+button{background:#e5ebd8;color:#879b70}.controls input{max-width:280px}.panel-body>section li button{font-size:10px;padding:5px 9px;margin-left:10px}.panel-body>section input[type=checkbox]{accent-color:#8ba371}.panel-body>section>div>strong{font-size:24px;color:#8ea379;margin-right:16px}
-.keyword-chips{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:4px;padding-left:28px}
+.keyword-chips{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin:0;padding-left:46px}
 .keyword-chips button{background:#eef1e4;color:#5f6b4d;font-size:11px;padding:5px 10px;border-radius:999px}
 .keyword-chips button:hover:not(:disabled){background:#e2e8d4}
-.doc-summary{display:block;margin-top:4px;font-style:normal;color:#8a8e76;font-size:11px;line-height:1.45;max-width:42ch}
+.doc-summary,.doc-error{margin:0;padding-left:46px;font-style:normal;color:#8a8e76;font-size:12px;line-height:1.55;max-width:100%;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.doc-error{color:#bb9e7e;-webkit-line-clamp:2}
 .compare-pick{display:flex;align-items:center;margin-right:2px}
+.settings-panel .muted{color:#8a8e76;font-size:12px;line-height:1.45;margin:0 0 12px}
+.llm-settings{display:flex;flex-direction:column;gap:10px;max-width:420px;margin-bottom:12px}
+.llm-settings label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#6d5f4c}
+.llm-settings input,.llm-settings select{width:100%}
+.llm-settings button{align-self:flex-start}
+.review-card{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.review-stem{margin:0;white-space:pre-wrap;line-height:1.45}
+.review-options{display:flex;flex-direction:column;gap:8px}
+.review-options button{display:flex;gap:10px;align-items:flex-start;text-align:left;background:#f4f5ee;color:#5d6450;border:1px solid #e1e4d6}
+.review-options button span{flex:0 0 auto;min-width:1.4em;font-weight:600;color:#73835f}
+.review-options button.active,.review-options button:hover:not(:disabled){background:#e8edd9;border-color:#c9d3b0;color:#4d6147}
+.chat-review-options{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chat-review-options button{background:#eef2e4;color:#596b49;padding:7px 10px;font-size:11px}
+.chat-quick-reviews{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.chat-quick-reviews button{padding:7px 12px;font-size:11px}
 .next-step-card{margin:0 0 12px;padding:12px 14px;border:1px solid #e4e7d8;border-radius:12px;background:#f7f8f1;display:grid;gap:6px;grid-template-columns:1fr auto;align-items:center}
 .next-step-card strong{grid-column:1/-1;color:#5d684c;font-size:13px}
 .next-step-card p{grid-column:1/-1;margin:0;color:#8a8e76;font-size:12px;line-height:1.45}
 .next-step-card button{justify-self:start}
 .streak-chip,.streak-banner{font-size:11px;color:#73835f}
-.streak-banner{margin:0 0 12px}
+.streak-banner{margin:0 0 8px;line-height:1.5}
+.bones-shop{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#f4f6ee;border:1px solid #e4e9d8}
+.bones-shop .muted{margin:0;flex:1 1 220px;font-size:12px;color:#8a8e76;line-height:1.45}
+.bones-shop button{flex:0 0 auto}
+.task-list{list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:8px}
+.task-list li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #eceadf}
+.task-list li label{flex:1 1 220px;display:flex;gap:8px;align-items:flex-start}
+.trash-panel{margin:4px 0 18px;padding:10px 12px;border:1px dashed #d9decc;border-radius:10px;background:#f7f8f2}
+.trash-toggle{margin:0}
+.trash-list{margin-top:10px}
+.trash-title{flex:1 1 220px;color:#8a8e76;font-size:12px;line-height:1.4}
+.trash-empty{margin:8px 0 0;font-size:12px}
 .source-footer-actions{display:flex;gap:10px;align-items:center}

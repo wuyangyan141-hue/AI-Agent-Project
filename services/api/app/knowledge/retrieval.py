@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from .embeddings import LocalLexicalEmbeddings, cosine
+from .embeddings import cosine
 
 STOP = set("the a an and or is are was were to of in on for with what why how explain describe please this that it does do be can".split())
 ZH_STOP = {'这个','这些','什么','为何','为什么','怎么','如何','请问','解释','一下','资料','文档','讲义','主要','哪些','是否','可以','根据','它的','中的','告诉','我们','一下子'}
@@ -51,8 +51,9 @@ class SQLiteRetriever(BaseRetriever):
         bags = [Counter(terms(row['content'])) for row in rows]
         avg_len = sum(sum(bag.values()) for bag in bags) / max(1, len(bags))
         dfs = Counter(t for bag in bags for t in bag)
-        semantic = not isinstance(self.embeddings, LocalLexicalEmbeddings)
-        query_vector = self.embeddings.embed_query(query) if semantic else None
+        # Local hash embeddings also get a soft cosine path so Chinese queries can
+        # still surface English passages when lexical overlap is weak.
+        query_vector = self.embeddings.embed_query(query)
         ranked = []
         for row, bag in zip(rows, bags):
             overlap = query_terms.intersection(bag)
@@ -63,16 +64,30 @@ class SQLiteRetriever(BaseRetriever):
                 idf = math.log(1 + (len(rows) - dfs[token] + .5) / (dfs[token] + .5))
                 bm25 += idf * tf * 2.2 / (tf + 1.2 * (.25 + .75 * sum(bag.values()) / max(1, avg_len)))
             lexical = coverage * (0.7 + 0.3 * bm25 / (1 + bm25)) if overlap else 0.0
-            dense = cosine(query_vector, row['vector']) if semantic else 0.0
-            # Hash collisions and filename-only matches cannot create evidence.
-            if lexical < self.min_score and (not semantic or dense < self.semantic_min_score):
-                continue
-            score = max(lexical, dense) if semantic else lexical
-            fused = (0.65 * dense + 0.35 * lexical) if semantic else lexical
-            ranked.append((fused, score, lexical, dense, row))
+            file_terms = set(terms(row.get('filename') or ''))
+            section_terms = set(terms(row.get('section') or ''))
+            if query_terms.intersection(file_terms):
+                lexical = max(lexical, 0.22)
+            if query_terms.intersection(section_terms):
+                lexical = max(lexical, 0.18)
+            dense = cosine(query_vector, row['vector'])
+            soft = dense >= self.semantic_min_score
+            # Feature-hash vectors are not true semantics: pure soft hits with zero
+            # token overlap are usually collisions and invent fake "evidence".
+            lexical_ok = lexical >= self.min_score
+            hash_local = 'lexical-hash' in (self.embedding_id or '')
+            if not lexical_ok:
+                if not soft:
+                    continue
+                if hash_local and not overlap and not query_terms.intersection(file_terms | section_terms):
+                    continue
+            score = max(lexical, dense if soft else 0.0)
+            fused = 0.55 * dense + 0.45 * lexical if soft else lexical
+            method = 'hybrid' if soft and lexical_ok else ('semantic' if soft else 'bm25')
+            ranked.append((fused, score, lexical, dense, method, row))
         ranked.sort(key=lambda item: item[0], reverse=True)
         chosen, fingerprints = [], set()
-        for _, score, lexical, dense, row in ranked:
+        for _, score, lexical, dense, method, row in ranked:
             fingerprint = (row['document_id'], re.sub(r'\s+', ' ', row['content']).strip())
             if fingerprint in fingerprints:
                 continue
@@ -81,7 +96,7 @@ class SQLiteRetriever(BaseRetriever):
                 'chunk_id': row['id'], 'document_id': row['document_id'], 'filename': row['filename'],
                 'page': row['page'], 'section': row['section'], 'score': round(score, 4),
                 'lexical_score': round(lexical, 4), 'semantic_score': round(dense, 4),
-                'retrieval_method': 'hybrid' if semantic else 'bm25', 'evidence_kind': 'retrieved',
+                'retrieval_method': method, 'evidence_kind': 'retrieved',
             }))
             if len(chosen) >= self.k:
                 break

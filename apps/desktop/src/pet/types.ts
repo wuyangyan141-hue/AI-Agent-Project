@@ -26,7 +26,7 @@ export const DEFAULT_BUBBLE_COPY: BubbleCopy = {
   error: '遇到了一点问题，请再试一次。',
 };
 
-export const PET_WINDOW_WIDTH = 320;
+export const PET_WINDOW_WIDTH = 248;
 export const BUBBLE_MAX_LINES = 5;
 /** Minimum time a reply stays in the pet bubble before returning to idle. */
 export const SUCCESS_HOLD_MS = 8000;

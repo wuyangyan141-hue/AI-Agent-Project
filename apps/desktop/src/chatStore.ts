@@ -66,7 +66,11 @@ export function createConversationStore(port?: Port, disk?: Disk) {
         scope: current.scope === 'chat' ? 'chat' : contextIds?.length === 1 ? contextIds[0] : contextIds && contextIds.length > 1 ? current.scope : current.scope,
         messages: [...current.messages, { id: crypto.randomUUID(), role: 'assistant', content: event.text,
           metadata: { sources: event.sources, mode: event.answer_mode, warning: event.warning || undefined,
-            draft: event.draft, kind: event.kind, review: event.review, next_step: event.next_step } }],
+            draft: event.draft, kind: event.kind, review: event.review,
+            today_plan: event.today_plan as import('./knowledge').TodayPlanPayload | undefined,
+            plan_options: event.plan_options as import('./knowledge').PlanOption[] | undefined,
+            offer_review: event.offer_review,
+            next_step: event.next_step } }],
       }));
       return true;
     },

@@ -23,6 +23,17 @@ class GroundingVerdict(BaseModel):
     relevant: bool
     supported: bool
 
+class SummaryPoint(BaseModel):
+    text: str = Field(min_length=1, max_length=800)
+    source_ids: list[str] = Field(min_length=1, max_length=16)
+
+class DocumentSummary(BaseModel):
+    """True synthesized summary: claims cite source ids, not brittle verbatim quotes."""
+    overview: str = Field(min_length=1, max_length=2000)
+    key_points: list[SummaryPoint] = Field(min_length=1, max_length=12)
+    limitations: str = Field(default='', max_length=800)
+    overview_source_ids: list[str] = Field(default_factory=list, max_length=16)
+
 class NoEvidence(ValueError):
     pass
 
@@ -42,7 +53,29 @@ def structured(model, schema, system, data):
 
 
 def normalized(text):
-    return re.sub(r'\s+', ' ', text).strip()
+    """Collapse whitespace / punctuation noise so Chinese PDF quotes can match."""
+    text = re.sub(r'\s+', '', str(text or ''))
+    table = str.maketrans({
+        '，': ',', '。': '.', '：': ':', '；': ';', '！': '!', '？': '?',
+        '（': '(', '）': ')', '【': '[', '】': ']', '“': '"', '”': '"',
+        '‘': "'", '’': "'", '、': ',', '—': '-', '－': '-', '　': '',
+    })
+    return text.translate(table).casefold()
+
+
+def quote_supported(quote: str, snippet: str) -> bool:
+    q = normalized(quote)
+    s = normalized(snippet)
+    # After whitespace collapse, short CJK quotes can be < 8 codepoints.
+    if len(q) < 4 or not s:
+        return False
+    if q in s:
+        return True
+    # Tolerate tiny OCR / model drift: require a long contiguous overlap.
+    window = min(16, len(q))
+    if window < 8:
+        return False
+    return any(q[i:i + window] in s for i in range(0, len(q) - window + 1))
 
 
 def render_claims(result, sources):
@@ -56,7 +89,7 @@ def render_claims(result, sources):
         ids = []
         for evidence in claim.evidence:
             source = known.get(evidence.source_id)
-            if source is None or normalized(evidence.quote) not in normalized(source['snippet']):
+            if source is None or not quote_supported(evidence.quote, source['snippet']):
                 raise ValueError('模型引用的摘录不在对应原文中。')
             if evidence.source_id not in ids:
                 ids.append(evidence.source_id)
@@ -86,3 +119,66 @@ def generate(model, question, sources, preferences=None, memories=None, history=
     if not verdict.supported:
         raise ValueError('结论未通过证据支持检查。')
     return answer, used, quotes
+
+
+def synthesize_summary(model, instruction: str, sources: list[dict]):
+    """Produce a real integrative summary bound to source ids (softer than Q&A quote checks)."""
+    known = {source['id']: source for source in sources}
+    compact = []
+    for source in sources:
+        text = source.get('digest') or source.get('snippet') or ''
+        compact.append({
+            'id': source['id'],
+            'filename': source.get('filename'),
+            'page': source.get('page'),
+            'section': source.get('section'),
+            'text': re.sub(r'\s+', ' ', str(text))[:900],
+        })
+    result = structured(
+        model,
+        DocumentSummary,
+        '你是学习资料总结助手。输入是知识库整理好的原文导览笔记（含页码/片段），请改写成真正的综合摘要，使用中文。'
+        '不要逐页复述或只堆页码；先总述主题，再归纳方法、信号、结论与适用边界。'
+        'overview 是全文总述；key_points 覆盖各主要部分。'
+        '每条要点必须带上支持它的 source_ids（只能使用笔记里的 id）。'
+        '不要在正文里手写 [S1] 这类编号，编号由服务端添加。'
+        '只使用笔记中出现的信息，不要编造数字、结论或方法。'
+        '若笔记写明局限、风险或适用范围，写入 limitations。',
+        {'task': instruction, 'notes': compact},
+    )
+    used_ids: list[str] = []
+
+    def take(ids: list[str]) -> list[str]:
+        valid = []
+        for sid in ids:
+            if sid in known and sid not in valid:
+                valid.append(sid)
+            if sid in known and sid not in used_ids:
+                used_ids.append(sid)
+        return valid
+
+    overview_ids = take(list(result.overview_source_ids))
+    if re.search(r'\[S\d+\]', result.overview):
+        raise ValueError('引用编号必须由服务端生成。')
+    lines = [result.overview.strip() + ((' ' + ''.join(f'[{sid}]' for sid in overview_ids)) if overview_ids else '')]
+    lines.append('')
+    lines.append('要点：')
+    for point in result.key_points:
+        if re.search(r'\[S\d+\]', point.text):
+            raise ValueError('引用编号必须由服务端生成。')
+        ids = take(list(point.source_ids))
+        if not ids:
+            raise ValueError('摘要要点缺少有效资料编号。')
+        lines.append(f'· {point.text.strip()} ' + ''.join(f'[{sid}]' for sid in ids))
+    if result.limitations.strip():
+        lines.extend(['', '限制与注意：' + result.limitations.strip()])
+    used = [known[sid] for sid in used_ids]
+    quotes = [
+        {
+            'source_id': sid,
+            'quote': re.sub(r'\s+', ' ', known[sid].get('snippet') or known[sid].get('digest') or '')[:160],
+            'claim': result.overview[:120],
+        }
+        for sid in used_ids[:8]
+    ]
+    return '\n'.join(lines).strip(), used, quotes

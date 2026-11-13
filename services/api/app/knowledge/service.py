@@ -13,8 +13,8 @@ from .embeddings import LocalLexicalEmbeddings, cosine, features, make_embedding
 from .overview import build_outline, build_summary, extract_keywords
 from .retrieval import SQLiteRetriever
 from .storage import Database, now, uid
-from .grounding import generate, NoEvidence, structured, QueryRewrite
-from .routing import FOLLOWUP, route_request
+from .grounding import generate, synthesize_summary, NoEvidence, structured, QueryRewrite
+from .routing import CONFUSED, FOLLOWUP, route_request
 
 UNSET = object()
 
@@ -57,9 +57,13 @@ class KnowledgeService:
         )
 
     def status(self):
+        from ..runtime_llm import public_config
+        cfg = public_config()
         return {
             "status": "ok", "llm_configured": self.chat_model is not None,
             "model": self.settings.llm_model or ("injected-model" if self.chat_model else None),
+            "llm_mode": cfg.get("mode"),
+            "online_ready": cfg.get("online_ready"),
             "embedding_id": self.embedding_id,
             "embedding_mode": "local_lexical" if isinstance(self.embeddings, LocalLexicalEmbeddings) else "semantic",
             "answer_mode": "llm" if self.chat_model else "extractive",
@@ -278,9 +282,62 @@ class KnowledgeService:
             min_score=self.settings.min_score, semantic_min_score=self.settings.semantic_min_score,
         )
 
+    def _scoped_ready_docs(self, user_id, document_ids=None):
+        ready = [d for d in self.list_documents(user_id) if d['status'] == 'ready' and not d['needs_reindex']]
+        if document_ids is None:
+            return ready
+        wanted = set(document_ids)
+        return [d for d in ready if d['id'] in wanted]
+
+    def _expand_query(self, user_id, query, document_ids=None):
+        """Blend document keywords/filenames into a weak query for a second pass."""
+        parts = [query.strip()]
+        for doc in self._scoped_ready_docs(user_id, document_ids)[:4]:
+            keywords = doc.get('keywords') or []
+            if not keywords:
+                try:
+                    keywords = self.document_overview(user_id, doc['id']).get('keywords') or []
+                except Exception:
+                    keywords = []
+            stem = re.sub(r'\.[^.]+$', '', doc.get('filename') or '')
+            if stem:
+                parts.append(stem.replace('_', ' ').replace('-', ' '))
+            parts.extend(keywords[:6])
+        expanded = ' '.join(dict.fromkeys(p for p in parts if p))
+        return expanded if expanded != query.strip() else ''
+
+    def _lead_chunk_fallback(self, user_id, document_ids=None, limit=2):
+        sources = []
+        for doc in self._scoped_ready_docs(user_id, document_ids)[:3]:
+            for row in self.document_chunks(user_id, doc['id'])[:limit]:
+                sources.append({
+                    'chunk_id': row['id'], 'document_id': doc['id'], 'filename': doc['filename'],
+                    'page': row.get('page'), 'section': row.get('section'),
+                    'snippet': re.sub(r'\s+', ' ', row['content'])[:280],
+                    'score': 0.12, 'lexical_score': 0.0, 'semantic_score': 0.0,
+                    'retrieval_method': 'lead_fallback', 'evidence_kind': 'overview',
+                })
+        return sources
+
     def search(self, user_id, query, document_ids=None, k=None):
-        return [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
+        hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
                 for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(query))]
+        if hits:
+            return hits
+        # Second pass only when the user clearly asked about the materials (not arbitrary misses).
+        about_doc = bool(re.search(r'这份|这个|资料|讲义|文档|总结|讲什么|关于|内容|重点|要求', query))
+        if not about_doc:
+            return []
+        expanded = self._expand_query(user_id, query, document_ids)
+        if expanded:
+            hits = [dict(id=f"S{i + 1}", snippet=doc.page_content, **doc.metadata)
+                    for i, doc in enumerate(self.retriever(user_id, document_ids, k).invoke(expanded))]
+            if hits:
+                return hits
+        fallback = self._lead_chunk_fallback(user_id, document_ids)
+        if fallback:
+            return self._source_ids(fallback[: (k or self.settings.top_k)])
+        return []
 
     def ensure_session(self, user_id, title='新对话'):
         session_id = uid()
@@ -316,7 +373,31 @@ class KnowledgeService:
             self.set_context(user_id, session_id, ids)
         return ids
 
+    def _explain_topic_hint(self, user_id, session_id, document_ids=None):
+        """Best available topic when the user only says they don't understand."""
+        topic = (self.context(user_id, session_id).get('topic') or '').strip() if session_id else ''
+        if topic and not CONFUSED.search(topic) and topic not in {'今日重点', '重点', '知识点'}:
+            return topic[:120]
+        for doc in self._scoped_ready_docs(user_id, document_ids)[:2]:
+            stem = re.sub(r'\.[^.]+$', '', doc.get('filename') or '')
+            words = doc.get('keywords') or []
+            if not words:
+                try:
+                    words = self.document_overview(user_id, doc['id']).get('keywords') or []
+                except Exception:
+                    words = []
+            label = '、'.join(words[:4]) if words else stem
+            if label:
+                return (f'{stem}：{label}' if stem and words else (stem or label))[:120]
+        return ''
+
     def standalone_query(self, user_id, question, session_id):
+        if CONFUSED.search(question or ''):
+            hint = self._explain_topic_hint(user_id, session_id)
+            if hint:
+                return f'{hint}\n用更简单的话解释核心概念与用法，帮助我看懂'
+            # No topic yet: still ask for a plain explanation of the scoped materials.
+            return '用更简单的话解释这份资料的核心概念与用法，帮助我看懂'
         if not FOLLOWUP.search(question):
             return question
         topic = self.context(user_id, session_id)['topic'] if session_id else ''
@@ -353,78 +434,136 @@ class KnowledgeService:
 
     def _summary_group(self, user_id, document_id, sources):
         raw = json.dumps(sources,ensure_ascii=False)
-        key = hashlib.sha256(('summary-v3:'+('model' if self.chat_model else 'offline')+':'+self.settings.llm_model+':'+self.settings.llm_base_url+':'+raw).encode()).hexdigest()
+        key = hashlib.sha256(('summary-v4:'+('model' if self.chat_model else 'offline')+':'+self.settings.llm_model+':'+self.settings.llm_base_url+':'+raw).encode()).hexdigest()
         cached = self.db.one('SELECT payload_json FROM knowledge_summaries WHERE cache_key=?',(key,))
         if cached:
             return json.loads(cached['payload_json'])
         numbered = self._source_ids(sources)
+        kept=None
         if self.chat_model:
-            text, used, quotes = generate(self.chat_model,'总结这些章节的关键概念、结论和限制，覆盖各部分。',numbered)
-            kept=[]
-            for source in used:
-                excerpts=[q['quote'] for q in quotes if q['source_id']==source['id']]
-                claims=[q['claim'] for q in quotes if q['source_id']==source['id']]
-                kept.append(dict(source,snippet='\n'.join(dict.fromkeys(excerpts)),digest='；'.join(dict.fromkeys(claims))))
-        else:
+            try:
+                text, used, quotes = synthesize_summary(self.chat_model,'总结这些章节的主题、关键概念、结论和限制，写成可继续汇总的要点。',numbered)
+                kept=[]
+                for source in used:
+                    excerpts=[q['quote'] for q in quotes if q['source_id']==source['id'] and q.get('quote')]
+                    claims=[q['claim'] for q in quotes if q['source_id']==source['id'] and q.get('claim')]
+                    digest='；'.join(dict.fromkeys(claims)) or re.sub(r'\s+',' ',text)[:220]
+                    # Keep compact text so later reductions can shrink under the context budget.
+                    snippet='\n'.join(dict.fromkeys(excerpts)) or re.sub(r'\s+',' ',source['snippet'])[:280]
+                    kept.append(dict(source,snippet=snippet,digest=digest))
+            except Exception:
+                kept=None
+        if kept is None:
             kept=[dict(source,digest=re.sub(r'\s+',' ',source['snippet'])[:160]) for source in sources]
         payload={'sources':kept,'processed_chunks':len(sources)}
         self.db.execute('INSERT OR REPLACE INTO knowledge_summaries VALUES(?,?,?,?)',(key,document_id,json.dumps(payload,ensure_ascii=False),now()))
         return payload
 
+    def _extractive_notes(self, sources):
+        """Offline retrieval notes used as the sole input to the summary LLM."""
+        notes=[]
+        for source in sources:
+            digest=re.sub(r'\s+',' ',source.get('digest') or source.get('snippet') or '')[:200]
+            notes.append(dict(source,digest=digest,snippet=digest))
+        return notes
+
+    def _fit_notes(self, notes):
+        fitted=[dict(item) for item in notes]
+        guard=0
+        while fitted and sum(len(x.get('digest') or '')+len(x.get('snippet') or '') for x in fitted)>self.settings.context_chars and guard<8:
+            guard+=1
+            if any(len(x.get('snippet') or '')>120 for x in fitted):
+                fitted=[dict(x,snippet=(x.get('digest') or x.get('snippet') or '')[:120],digest=(x.get('digest') or '')[:160]) for x in fitted]
+                continue
+            if len(fitted)<=6:
+                fitted=[dict(x,snippet=(x.get('digest') or '')[:90],digest=(x.get('digest') or '')[:90]) for x in fitted]
+                break
+            # Keep ends + evenly spaced middle so the LLM still sees whole-doc coverage.
+            keep={0,len(fitted)-1}
+            step=max(1,len(fitted)//12)
+            keep.update(range(0,len(fitted),step))
+            fitted=[fitted[i] for i in sorted(keep)]
+        return self._source_ids(fitted)
+
     def summarize_document(self, user_id, document_id):
         all_sources=self._chunk_sources(user_id,document_id)
-        groups=[]; current=[]; size=0
-        for source in all_sources:
-            if current and size+len(source['snippet'])>self.settings.context_chars:
-                groups.append(current);current=[];size=0
-            current.append(source);size+=len(source['snippet'])
-        if current: groups.append(current)
-        mapped=[]
-        for group in groups:
-            mapped.extend(self._summary_group(user_id,document_id,group)['sources'])
-        # Summaries carry exact original excerpts through every reduction level.
-        if self.chat_model:
-            while sum(len(x['snippet'])+len(x.get('digest','')) for x in mapped)>self.settings.context_chars:
-                reduced=[]
-                for offset in range(0,len(mapped),8):
-                    batch=mapped[offset:offset+8]
-                    reduced.extend(self._summary_group(user_id,document_id,batch)['sources'])
-                if len(reduced)>=len(mapped):
-                    raise DocumentError('摘要未能压缩到上下文预算，请拆分资料后重试。')
-                mapped=reduced
-            numbered=self._source_ids(mapped)
-            answer,used,quotes=generate(self.chat_model,'汇总全文的主题、各部分重点、结论和限制；不要声称未出现的信息。',numbered)
-            mode='summary'
-            warning=None
-        else:
-            used=self._source_ids(mapped)
-            answer='全文结构与原文导览（尚未配置生成模型）：\n\n'+'\n\n'.join(
-                f"{x['filename']} · "+(f"第{x['page']}页" if x['page'] else x['section'] or '正文')+f"：{x['digest']} [{x['id']}]" for x in used)
-            quotes=[];mode='extractive_overview';warning='这是覆盖全文片段的原文导览，不是模型生成的综合摘要。'
-        return {'answer':answer,'sources':used,'mode':mode,'warning':warning,'quotes':quotes,
-                'coverage':{'processed_chunks':len(all_sources),'total_chunks':len(all_sources),'document_ids':[document_id]}}
+        # Step 1: always build knowledge-base extractive notes (stable, no model).
+        extractive=self._extractive_notes(all_sources)
+        fallback_sources=self._source_ids(extractive)
+        fallback_answer='全文结构与原文导览：\n\n'+'\n\n'.join(
+            f"{x['filename']} · "+(f"第{x['page']}页" if x['page'] else x['section'] or '正文')+f"：{x.get('digest') or x['snippet'][:160]} [{x['id']}]" for x in fallback_sources)
+        coverage={'processed_chunks':len(all_sources),'total_chunks':len(all_sources),'document_ids':[document_id]}
+        if not self.chat_model:
+            return {'answer':fallback_answer,'sources':fallback_sources,'mode':'extractive_overview',
+                    'warning':'这是覆盖全文片段的原文导览，不是模型生成的综合摘要。','quotes':[],'coverage':coverage}
+        # Step 2: ask the chat model to rewrite those notes into a true summary.
+        try:
+            notes=self._fit_notes(extractive)
+            answer,used,quotes=synthesize_summary(
+                self.chat_model,
+                '下面是知识库检索得到的原文导览笔记。请据此生成真正的综合摘要：总述 + 要点 + 限制；融合相近内容，不要逐条照抄笔记。',
+                notes,
+            )
+            return {'answer':answer,'sources':used or notes,'mode':'summary','warning':None,'quotes':quotes,'coverage':coverage}
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception('synthesize_summary failed: %s', exc)
+            return {'answer':fallback_answer,'sources':fallback_sources,'mode':'extractive_overview',
+                    'warning':'综合摘要生成失败，已回退为覆盖全文的原文导览。请稍后重试。','quotes':[],'coverage':coverage}
 
     def learning_context(self, user_id, goal, document_ids=None):
+        """Light planning context: keywords + retrieval notes (no full-doc LLM summary)."""
         ready=[d for d in self.list_documents(user_id) if d['status']=='ready' and not d['needs_reindex']]
         ids=document_ids
         if ids is None:
-            hits=self.search(user_id,goal,None,k=4)
+            hits=self.search(user_id,goal,None,k=4) if goal.strip() else []
             ids=list(dict.fromkeys(s['document_id'] for s in hits))
-            if not ids and re.search('这份|这个|资料|讲义|文档',goal):
-                if len(ready)==1: ids=[ready[0]['id']]
-                elif len(ready)>1: raise ValueError('请先选择要用于学习计划的资料。')
+            if not ids:
+                if len(ready)==1:
+                    ids=[ready[0]['id']]
+                elif len(ready)>1 and re.search('这份|这个|资料|讲义|文档|知识库',goal):
+                    raise ValueError('请先选择要用于学习计划的资料。')
+                elif len(ready)>=1 and not goal.strip():
+                    ids=[d['id'] for d in ready[:3]]
         topics=[];sources=[]
         for document_id in ids or []:
             self.get_document(user_id,document_id)
             overview=self.document_overview(user_id,document_id)
             topics.extend(overview['keywords'][:6])
-            # Whole-document summary is cached and retains original evidence snapshots.
-            sources.extend(self.summarize_document(user_id,document_id)['sources'])
+            query=goal.strip() or ' '.join(overview['keywords'][:4]) or overview.get('summary','')[:40]
+            hits=self.search(user_id,query,[document_id],k=3)
+            if hits:
+                sources.extend(hits)
+            else:
+                for row in self.document_chunks(user_id,document_id)[:2]:
+                    sources.append({
+                        'id': row['id'],'chunk_id': row['id'],'document_id': document_id,
+                        'filename': overview.get('filename') or self.get_document(user_id,document_id)['filename'],
+                        'page': row.get('page'),'section': row.get('section'),
+                        'snippet': re.sub(r'\s+',' ',row['content'])[:280],'score': 0.2,
+                        'evidence_kind': 'overview',
+                    })
         budget=[];size=0
         for source in sources:
-            if size+len(source['snippet'])>self.settings.context_chars: continue
-            budget.append(source);size+=len(source['snippet'])
+            snippet=source.get('snippet') or ''
+            if size+len(snippet)>self.settings.context_chars: continue
+            budget.append(source);size+=len(snippet)
+        filenames=[]
+        for document_id in ids or []:
+            try:
+                filenames.append(self.get_document(user_id,document_id)['filename'])
+            except Exception:
+                pass
+        # Prefer specific review topics over raw noisy keywords when available.
+        try:
+            from ..skills.review_session import _knowledge_topics
+            ranked=_knowledge_topics(8)
+            if ranked:
+                topics=list(dict.fromkeys([*ranked, *topics]))
+        except Exception:
+            pass
         return {'document_ids':ids or [],'topics':list(dict.fromkeys(topics))[:12],
+                'filenames':list(dict.fromkeys(filenames)),
                 'sources':self._source_ids(budget)}
 
     def preferences(self, user_id):
@@ -531,7 +670,7 @@ class KnowledgeService:
         sources=self._source_ids(bounded)
         mode='llm';warning=None;quotes=[]
         if not sources:
-            answer='当前选定资料没有找到足够相关的证据。请调整问题或资料范围；也可以切换到普通聊天。'
+            answer=self._honest_no_evidence(user_id,question,document_ids)
             mode='no_evidence'
         elif self.chat_model is None:
             answer=self._extractive(sources);mode='extractive';warning='尚未配置对话模型；以下为相关原文。跨语言提问建议启用语义向量。'
@@ -540,9 +679,13 @@ class KnowledgeService:
                 answer,sources,quotes=generate(self.chat_model,question,sources,preferences,memories,
                     [{'role':m['role'],'content':m['content'][:700]} for m in history[-4:]])
             except NoEvidence:
-                answer='找到一些相关片段，但不足以支持这个问题的答案。请补充资料或缩小问题范围。';sources=[];mode='no_evidence'
+                answer=self._honest_no_evidence(user_id,question,document_ids,partial=True);sources=[];mode='no_evidence'
             except ValueError:
-                answer=self._extractive(sources);mode='citation_fallback';warning='回答未通过原文或证据检查，已改为显示检索原文。'
+                # Quotes/support failed: only show raw snippets when they clearly match the ask.
+                if self._hits_support_question(question,sources):
+                    answer=self._extractive(sources);mode='citation_fallback';warning='回答未通过原文或证据检查，已改为显示检索原文。'
+                else:
+                    answer=self._honest_no_evidence(user_id,question,document_ids,partial=True);sources=[];mode='no_evidence'
             except Exception:
                 answer=self._extractive(sources);mode='model_error';warning='对话模型调用失败，请检查密钥、地址及模型权限；以下为相关原文。'
         if mode not in {'no_evidence','model_error'}:
@@ -573,6 +716,40 @@ class KnowledgeService:
         return bool(re.search(
             r"记得我|记住了什么|保存的个人记忆|我的.*(偏好|习惯|目标|学习时段|可用时间|学习时间)|我(?!们).*(喜欢|习惯)|关于我的.*(信息|记忆)", question,
         ))
+
+    def _honest_no_evidence(self, user_id, question, document_ids=None, *, partial=False):
+        """Admit the corpus cannot answer; never invent off-document facts."""
+        topic = re.sub(r'\s+', ' ', (question or '').strip())[:48] or '该问题'
+        hints = []
+        for doc in self._scoped_ready_docs(user_id, document_ids)[:3]:
+            words = doc.get('keywords') or []
+            if not words:
+                try:
+                    words = self.document_overview(user_id, doc['id']).get('keywords') or []
+                except Exception:
+                    words = []
+            if words:
+                hints.append(f"{doc['filename']}：{'、'.join(words[:5])}")
+        tip = (' 库里目前相关的主题更接近：' + '；'.join(hints)) if hints else ' 也可以先上传相关资料，或改问普通聊天。'
+        if partial:
+            return f'检索到的片段不足以回答「{topic}」，我不会据此编造。请换个与资料更贴近的问法，或补充材料。' + tip
+        return f'知识库里没有找到与「{topic}」相关的可靠内容，我不会编造答案。请调整问题或资料范围。' + tip
+
+    @staticmethod
+    def _hits_support_question(question, sources):
+        from .retrieval import terms
+        qterms = set(terms(question or ''))
+        if not qterms or not sources:
+            return False
+        for source in sources:
+            bag = set(terms(' '.join([
+                source.get('snippet') or '',
+                source.get('filename') or '',
+                source.get('section') or '',
+            ])))
+            if qterms & bag or (source.get('lexical_score') or 0) >= 0.16:
+                return True
+        return False
 
     @staticmethod
     def _extractive(sources):

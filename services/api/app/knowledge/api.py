@@ -179,7 +179,14 @@ def preferences(service: Service,user: User):
 
 @router.put('/preferences')
 def save_preferences(body: Preferences,service: Service,user: User):
-    return service.save_preferences(user,body.values)
+    saved = service.save_preferences(user, body.values)
+    try:
+        from ..skills.preferences_loop import categorized_memories, rebuild_preference_summary
+        summary = rebuild_preference_summary(saved, categorized_memories(user))
+        saved = service.save_preferences(user, {**saved, 'preference_summary': summary})
+    except Exception:
+        pass
+    return saved
 
 @router.get('/memories')
 def memories(service: Service,user: User):

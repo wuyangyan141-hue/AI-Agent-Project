@@ -8,6 +8,12 @@ export function PetContextMenu({
   onRestartPet,
   onTodayPlan,
   onContinueReview,
+  onFeedPet,
+  onAsk,
+  onQuiz,
+  onWeakPoint,
+  feedLabel = '喂骨头',
+  feedDisabled = false,
   chatOpen,
   restartShortcut = 'Ctrl+Shift+R',
 }: {
@@ -18,6 +24,12 @@ export function PetContextMenu({
   onRestartPet: () => void;
   onTodayPlan: () => void;
   onContinueReview: () => void;
+  onFeedPet?: () => void;
+  onAsk?: () => void;
+  onQuiz?: () => void;
+  onWeakPoint?: () => void;
+  feedLabel?: string;
+  feedDisabled?: boolean;
   chatOpen: boolean;
   restartShortcut?: string;
 }) {
@@ -58,12 +70,32 @@ export function PetContextMenu({
       onPointerDown={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.preventDefault()}
     >
+      {onAsk && (
+        <button type="button" role="menuitem" onClick={() => run(onAsk)}>
+          提问
+        </button>
+      )}
+      {onQuiz && (
+        <button type="button" role="menuitem" onClick={() => run(onQuiz)}>
+          出题答题
+        </button>
+      )}
+      {onWeakPoint && (
+        <button type="button" role="menuitem" onClick={() => run(onWeakPoint)}>
+          薄弱点回顾
+        </button>
+      )}
       <button type="button" role="menuitem" onClick={() => run(onTodayPlan)}>
         今日计划
       </button>
       <button type="button" role="menuitem" onClick={() => run(onContinueReview)}>
         继续复习
       </button>
+      {onFeedPet && (
+        <button type="button" role="menuitem" disabled={feedDisabled} onClick={() => run(onFeedPet)}>
+          {feedLabel}
+        </button>
+      )}
       <button type="button" role="menuitem" onClick={() => run(onOpenChat)}>
         打开完整聊天
       </button>
@@ -71,7 +103,7 @@ export function PetContextMenu({
         打开知识库
       </button>
       <button type="button" role="menuitem" onClick={() => run(onToggleChat)}>
-        {chatOpen ? '收起聊天' : '展开聊天'}
+        {chatOpen ? '收起头顶历史' : '展开头顶历史'}
       </button>
       <button type="button" role="menuitem" onClick={() => run(onRestartPet)}>
         重启桌宠（{restartShortcut}）

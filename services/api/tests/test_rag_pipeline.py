@@ -6,7 +6,7 @@ from langchain_core.embeddings import Embeddings
 from app.knowledge.config import Settings
 from app.knowledge.service import KnowledgeService
 from app.knowledge.integration import get_knowledge
-from app.knowledge.grounding import GroundedAnswer, GroundingVerdict, render_claims
+from app.knowledge.grounding import DocumentSummary, GroundedAnswer, GroundingVerdict, render_claims
 from app.knowledge.routing import route_request
 from app.main import app
 
@@ -31,9 +31,31 @@ class EvidenceModel:
                     return schema(claims=[{'text':s.get('digest') or s['snippet'][:80],
                         'evidence':[{'source_id':s['id'],'quote':'invented nonexistent quote' if owner.invalid_quote else s['snippet'][:100]}]}
                         for s in data['sources'][:12]])
+                if schema is DocumentSummary:
+                    items=data.get('notes') or data.get('sources') or []
+                    points=[{'text':(s.get('text') or s.get('digest') or s.get('snippet') or '要点')[:120],'source_ids':[s['id']]}
+                            for s in items[:8]]
+                    return schema(overview='综合摘要：'+(points[0]['text'][:100] if points else '资料概览'),
+                                  key_points=points or [{'text':'资料概览','source_ids':[items[0]['id']]}],
+                                  limitations='',overview_source_ids=[items[0]['id']])
                 if schema.__name__=='ReviewQuestion':
                     s=data['sources'][0]
-                    return schema(topic='范围查询',question='根据资料解释范围查询为何有效，并举例说明。',reference_answer='叶子节点相连支持范围扫描。',criteria=['叶子节点之间连接支持顺序扫描'],source_ids=[s['id']],quotes=[s['snippet'][:100]])
+                    preferred=data.get('preferred_type') or 'short_answer'
+                    if preferred=='multiple_choice':
+                        return schema(topic='范围查询',question_type='multiple_choice',
+                            question='根据资料，范围查询主要依赖哪一点？',
+                            options=[{'key':'A','text':'叶子节点顺序连接'},{'key':'B','text':'哈希无序桶'},{'key':'C','text':'仅根节点缓存'},{'key':'D','text':'随机探测'}],
+                            correct_key='A',reference_answer='叶子节点相连支持范围扫描。',
+                            criteria=['叶子节点之间连接支持顺序扫描'],source_ids=[s['id']],quotes=[s['snippet'][:100]])
+                    if preferred=='true_false':
+                        return schema(topic='范围查询',question_type='true_false',
+                            question='判断：叶子节点相连有利于范围扫描。',
+                            options=[{'key':'A','text':'正确'},{'key':'B','text':'错误'}],correct_key='A',
+                            reference_answer='正确，相邻叶子支持顺序访问。',
+                            criteria=['叶子节点之间连接支持顺序扫描'],source_ids=[s['id']],quotes=[s['snippet'][:100]])
+                    return schema(topic='范围查询',question_type='short_answer',question='根据资料解释范围查询为何有效，并举例说明。',
+                        options=[],correct_key='',reference_answer='叶子节点相连支持范围扫描。',criteria=['叶子节点之间连接支持顺序扫描'],
+                        source_ids=[s['id']],quotes=[s['snippet'][:100]])
                 if schema.__name__=='Grade':
                     return schema(points=[{'index':0,'met':True,'explanation':'同义表达正确描述了相邻叶子的顺序访问。'}],feedback='理解正确，接受同义表达。')
                 raise AssertionError(schema)
@@ -76,6 +98,16 @@ def test_semantic_cross_language_without_lexical_overlap(tmp_path):
     assert kb.search('local-user','为什么适合范围扫描？')[0]['document_id']==doc['id']
     assert kb.search('local-user','完全无关的问题')==[]
 
+
+def test_chinese_about_doc_expands_to_english_material(kb):
+    doc=upload(kb,'Students must submit the midterm report with grading criteria listed below.','midterm-report.txt')
+    hits=kb.search('local-user','这份资料讲什么', [doc['id']])
+    assert hits and hits[0]['document_id']==doc['id']
+    result=kb.answer('local-user','火星上有没有空气？',document_ids=[doc['id']])
+    assert result['mode']=='no_evidence'
+    assert '不会编造' in result['answer']
+    assert '关键词' in result['answer'] or '讲义' in result['answer'] or '资料' in result['answer'] or '主题' in result['answer']
+
 @pytest.mark.parametrize('invalid,supported,relevant,mode',[(True,True,True,'citation_fallback'),(False,False,True,'citation_fallback'),(False,True,False,'no_evidence'),(False,True,True,'llm')])
 def test_grounding_checks_quotes_and_support(kb,invalid,supported,relevant,mode):
     upload(kb);kb.chat_model=EvidenceModel(invalid,supported,relevant)
@@ -93,8 +125,12 @@ def test_summary_covers_last_chapter_and_clarifies_ambiguous_doc(kb):
     doc=upload(kb,text,'long.txt')
     result=kb.answer('local-user','总结这份资料',document_ids=[doc['id']])
     assert result['coverage']['processed_chunks']==doc['chunk_count']
-    assert any('topic13' in s['snippet'] for s in result['sources'])
-    assert result['mode']=='extractive_overview'
+    # Offline extractive keeps raw snippets; model summary may cite compressed digests.
+    assert result['mode'] in {'extractive_overview','summary'}
+    if result['mode']=='extractive_overview':
+        assert any('topic13' in s['snippet'] for s in result['sources'])
+    else:
+        assert result['answer'] and '要点：' in result['answer']
     upload(kb,'A different unrelated document.','other.txt')
     assert kb.answer('local-user','总结这份资料')['mode']=='clarification'
 
@@ -102,11 +138,17 @@ def test_model_summary_maps_full_document_and_caches_groups(kb):
     doc=upload(kb,'\n\n'.join(f'Section {i}: '+('range queries use linked leaf nodes. '*40) for i in range(16)),'long.txt')
     model=EvidenceModel();kb.chat_model=model
     first=kb.summarize_document('local-user',doc['id'])
+    assert first['mode']=='summary'
+    assert '要点：' in first['answer']
     assert first['coverage']['processed_chunks']==doc['chunk_count']
+    # Extractive notes first, then a single LLM rewrite call.
+    assert len(model.calls)==1 and model.calls[0][0]=='DocumentSummary'
+    assert 'notes' in model.calls[0][1]
     before=len(model.calls)
     second=kb.summarize_document('local-user',doc['id'])
-    assert len(model.calls)-before==2
+    assert len(model.calls)-before==1
     assert second['coverage']==first['coverage']
+    assert second['mode']=='summary'
 
 def test_comparison_requires_evidence_from_each_document(kb):
     a=upload(kb);b=upload(kb,'Solar cells transform sunlight into electricity.','solar.txt')
@@ -124,7 +166,14 @@ def test_preferences_are_used_without_replacing_course_evidence(kb):
     assert result['mode']=='llm'
     assert model.calls[0][1]['preferences']['explanation_style']=='先讲结论'
 
-@pytest.mark.parametrize('text,expected',[('今天好累，陪我聊聊','chat'),('总结这份讲义','summary'),('比较这些资料','compare'),('B+树为什么适合范围查询？','knowledge')])
+@pytest.mark.parametrize('text,expected',[
+    ('今天好累，陪我聊聊','chat'),
+    ('陪我学习','chat'),
+    ('一起学吧','chat'),
+    ('总结这份讲义','summary'),
+    ('比较这些资料','compare'),
+    ('B+树为什么适合范围查询？','knowledge'),
+])
 def test_request_routes(text,expected): assert route_request(text,has_documents=True)==expected
 
 def terminal(ws):
