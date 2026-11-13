@@ -14,7 +14,15 @@ def test_chat_roundtrip(tmp_path, monkeypatch):
         assert ws.receive_json()['state'] == 'idle'
         ws.send_json({'type': 'message', 'text': '复习数据库'})
         assert ws.receive_json()['state'] == 'thinking'
-        assert '复习数据库' in ws.receive_json()['text']
+        reply = None
+        for _ in range(8):
+            event = ws.receive_json()
+            if event.get('type') == 'reply':
+                reply = event
+                break
+            assert event.get('state') in {'thinking', 'searching'}
+        assert reply is not None
+        assert '复习数据库' in reply['text']
         ws.send_json({'type': 'message', 'text': '  '})
         assert ws.receive_json()['type'] == 'error'
 
