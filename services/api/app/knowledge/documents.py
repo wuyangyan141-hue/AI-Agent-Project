@@ -90,13 +90,20 @@ def parse_document(data: bytes, filename: str) -> list[Document]:
                     raise DocumentError("Word 文件解压后过大，请拆分后上传。")
             word = WordDocument(BytesIO(data))
             blocks = []
+            section = 'Word 正文'
+            def flush_blocks():
+                if blocks:
+                    pages.append(Document(page_content='\n\n'.join(blocks), metadata={'page':None,'section':section}))
+                    blocks.clear()
             for item in word.iter_inner_content():
-                if isinstance(item, Table):
-                    blocks.extend(" | ".join(cell.text for cell in row.cells) for row in item.rows)
+                if isinstance(item,Table):
+                    blocks.extend(' | '.join(cell.text for cell in row.cells) for row in item.rows)
                 else:
-                    blocks.append(item.text)
-            text = "\n\n".join(block for block in blocks if block.strip())
-            pages.append(Document(page_content=text, metadata={"page": None, "section": "Word 正文"}))
+                    style=getattr(getattr(item,'style',None),'name','') or ''
+                    if style.lower().startswith('heading') or style.startswith('标题'):
+                        flush_blocks();section=item.text.strip() or section
+                    if item.text.strip(): blocks.append(item.text)
+            flush_blocks()
         elif suffix == ".pptx":
             pages.extend(_parse_pptx(data, filename))
         elif suffix == ".ppt":
@@ -137,5 +144,5 @@ def chunk_documents(pages: list[Document]) -> list[Document]:
     for position, chunk in enumerate(chunks):
         chunk.metadata["position"] = position
         if chunk.metadata.get("page") is None:
-            chunk.metadata["section"] = f"正文片段 {position + 1}"
+            chunk.metadata["section"] = f"{chunk.metadata.get('section') or '正文'} · 片段 {position + 1}"
     return chunks

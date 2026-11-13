@@ -10,7 +10,8 @@ def _service(settings: Settings):
 
 
 def get_knowledge() -> KnowledgeService:
-    return _service(Settings.from_env())
+    from ..runtime_llm import active_settings
+    return _service(active_settings())
 
 
 def personal_context(query: str) -> dict:

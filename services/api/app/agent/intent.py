@@ -6,16 +6,57 @@ from pydantic import BaseModel, Field
 
 
 class StudyIntent(BaseModel):
-    action: Literal['chat', 'plan', 'replan', 'focus', 'review', 'quiz', 'weak', 'next'] = 'chat'
+    action: Literal['chat', 'plan', 'replan', 'focus', 'done', 'review', 'quiz', 'weak', 'next', 'today'] = 'chat'
     goal: str = Field(default='', max_length=200)
     days: int = Field(default=3, ge=1, le=14)
     minutes_per_day: int = Field(default=45, ge=15, le=240)
-    minutes: int = Field(default=25, ge=1, le=240)
+    minutes: int = Field(default=25, ge=0, le=240)
+    seconds: int = Field(default=0, ge=0, le=14400)
     topic: str = Field(default='', max_length=200)
+
+
+def _first_int(*groups: str | None) -> int | None:
+    for group in groups:
+        if group is not None:
+            return int(group)
+    return None
+
+
+def _parse_focus_intent(text: str) -> StudyIntent | None:
+    """Match focus commands including 30s / 30秒 / 25分钟专注."""
+    sec_match = re.search(
+        r'(?:进行|开始|进入|需要)?(?:一个)?\s*(\d{1,4})\s*(?:秒|s)\s*(?:的)?\s*专注'
+        r'|专注\s*(\d{1,4})\s*(?:秒|s)'
+        r'|(?:开始|进入)?专注\s*(\d{1,4})\s*(?:秒|s)',
+        text,
+        re.I,
+    )
+    if sec_match:
+        seconds = _first_int(*sec_match.groups())
+        if seconds is not None and 1 <= seconds <= 14400:
+            return StudyIntent(action='focus', minutes=0, seconds=seconds)
+
+    minute_match = re.search(
+        r'(?:进行|开始|进入|需要)?(?:一个)?\s*(\d{1,3})\s*分钟\s*(?:的)?\s*专注'
+        r'|专注\s*(\d{1,3})\s*分钟'
+        r'|(?:开始|进入)?专注\s*(\d{1,3})\s*分钟',
+        text,
+    )
+    if minute_match:
+        focus_minutes = _first_int(*minute_match.groups())
+        if focus_minutes is not None and 1 <= focus_minutes <= 240:
+            return StudyIntent(action='focus', minutes=focus_minutes, seconds=0)
+
+    if re.search(r'开始专注|进入番茄|开始番茄|我要专注|开始番茄钟', text):
+        return StudyIntent(action='focus', minutes=25, seconds=0)
+    return None
 
 
 def explicit_intent(text: str) -> StudyIntent:
     """Conservative fallback: only route an unmistakable plan/focus/review command."""
+    from .entities import normalize_utterance
+
+    text = normalize_utterance(text)
     days_match = re.search(r'(\d{1,2})\s*天', text)
     minutes_match = re.search(r'每天\s*(\d{1,3})\s*分钟', text)
     days = int(days_match.group(1)) if days_match else 3
@@ -37,17 +78,30 @@ def explicit_intent(text: str) -> StudyIntent:
         if re.match(r'^\s*(?:(?:请|帮我|给我)\s*)*(?:制定|生成|安排|规划).{0,8}(?:学习)?计划', text):
             return StudyIntent(action='plan', days=days, minutes_per_day=minutes)
 
-    focus_match = re.search(r'(?:开始|进入)?专注\s*(\d{1,3})\s*分钟', text)
-    if focus_match or re.search(r'开始专注|进入番茄|开始番茄', text):
-        focus_minutes = int(focus_match.group(1)) if focus_match else 25
-        if 1 <= focus_minutes <= 240:
-            return StudyIntent(action='focus', minutes=focus_minutes)
+    focus = _parse_focus_intent(text)
+    if focus is not None:
+        return focus
+    # Finish active check-in / focus early (scheme D on top of timed check-in).
+    if re.search(
+        r'^(?:我)?做完了[。！!～]*$'
+        r'|我做完了|提前完成(?:了|打卡)?'
+        r'|打卡完成了?|完成打卡|结束打卡|结束专注|专注结束',
+        text,
+    ):
+        return StudyIntent(action='done')
     if re.search(r'今日小测|今天小测|来几道题|小测验|我想小测|我要小测|小测一下|开始小测|来个小测|做个小测', text):
         return StudyIntent(action='quiz')
-    if re.search(r'薄弱点|薄弱环节|错题回顾|回顾薄弱', text):
+    if re.search(r'薄弱点回顾|薄弱点|薄弱环节|错题回顾|回顾薄弱|回顾错题|错题再练', text):
         return StudyIntent(action='weak')
+    # 「今日计划」must list today's tasks — never fall through to vague「下一步」coaching.
     if re.search(
-        r'下一步|接下来做什么|学习闭环|继续学习|该学什么|该做什么|怎么办|卡住了|帮我想想|不知道学什么|推荐下一步|我该怎么学',
+        r'今日计划|今天的计划|今天计划|今日安排|今天安排|我的计划|看看计划|查看计划|今日待办|今天待办',
+        text,
+    ):
+        return StudyIntent(action='today')
+    if re.search(
+        r'下一步|接下来做什么|学习闭环|继续学习|该学什么|该做什么|怎么办|卡住了|帮我想想|'
+        r'不知道学什么|推荐下一步|我该怎么学|陪我学习|陪我学|一起学习|一起学|来陪我|跟我学|陪学',
         text,
     ):
         return StudyIntent(action='next')

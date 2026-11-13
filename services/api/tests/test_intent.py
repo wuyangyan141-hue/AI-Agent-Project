@@ -16,8 +16,18 @@ def test_explicit_intent_routes_only_clear_commands():
     assert explicit_intent('帮我制定学习计划').goal == ''
     assert explicit_intent('怎么制定学习计划？').action == 'chat'
     assert explicit_intent('开始专注 25 分钟').action == 'focus'
+    short = explicit_intent('我需要进行30s专注')
+    assert short.action == 'focus' and short.seconds == 30 and short.minutes == 0
+    assert explicit_intent('专注30秒').seconds == 30
+    assert explicit_intent('25分钟专注').minutes == 25
+    assert explicit_intent('我做完了').action == 'done'
+    assert explicit_intent('做完了').action == 'done'
+    assert explicit_intent('提前完成').action == 'done'
+    assert explicit_intent('结束打卡').action == 'done'
     assert explicit_intent('今日小测').action == 'quiz'
     assert explicit_intent('开始复习 B+树').action == 'review'
+    assert explicit_intent('薄弱点回顾').action == 'weak'
+    assert explicit_intent('错题再练').action == 'weak'
     assert explicit_intent('复习数据库').action == 'chat'
 
 
@@ -60,7 +70,8 @@ def test_model_intent_contract_without_external_api(monkeypatch):
     class FakeModel:
         def __init__(self, **kwargs):
             assert kwargs['temperature'] == 0
-        def with_structured_output(self, schema):
+        def with_structured_output(self, schema, method=None):
+            assert method == "function_calling"
             assert schema is StudyIntent
             return self
         async def ainvoke(self, messages):

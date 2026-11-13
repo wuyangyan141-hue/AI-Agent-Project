@@ -11,8 +11,11 @@ const tabs = new Set(['chat', 'tasks', 'library', 'memory', 'history', 'settings
 const development =
   process.argv.includes('--companion-dev') ||
   (!fs.existsSync(path.join(__dirname, '../dist/index.html')) && !app.isPackaged);
-const PET_WIDTH = 320;
-const PET_HEIGHT_COLLAPSED = 360;
+const PET_WIDTH = 248;
+const PET_HEIGHT_COLLAPSED = 200;
+/** Keep only a small grab slice on-screen so the dog can sit in true corners. */
+const PET_EDGE_KEEP_X = 40;
+const PET_EDGE_KEEP_Y = 72;
 /** Soft-restart pet (+ reload chat): Ctrl/⌘ + Shift + R */
 const RESTART_ACCELERATOR = 'CommandOrControl+Shift+R';
 const positionFile = () => path.join(app.getPath('userData'), 'pet-bounds.json');
@@ -40,11 +43,17 @@ function writeSavedBounds() {
 }
 
 function clampToWorkArea(x: number, y: number, width: number, height: number) {
-  const display = screen.getDisplayNearestPoint({ x: Math.round(x + width / 2), y: Math.round(y + height / 2) });
-  const area = display.workArea;
+  // Prefer the display under the cursor / requested point so multi-monitor + overhang
+  // still resolve correctly. Use full bounds (includes taskbar) for true corners.
+  const probeX = Math.round(x + Math.min(PET_EDGE_KEEP_X, width / 2));
+  const probeY = Math.round(y + Math.min(PET_EDGE_KEEP_Y, height / 2));
+  const display = screen.getDisplayNearestPoint({ x: probeX, y: probeY });
+  const area = display.bounds;
+  const keepX = Math.min(PET_EDGE_KEEP_X, Math.max(24, Math.floor(width * 0.18)));
+  const keepY = Math.min(PET_EDGE_KEEP_Y, Math.max(40, Math.floor(height * 0.28)));
   return {
-    x: Math.min(Math.max(area.x, Math.round(x)), area.x + area.width - width),
-    y: Math.min(Math.max(area.y, Math.round(y)), area.y + area.height - height),
+    x: Math.min(Math.max(area.x + keepX - width, Math.round(x)), area.x + area.width - keepX),
+    y: Math.min(Math.max(area.y + keepY - height, Math.round(y)), area.y + area.height - keepY),
     width,
     height,
   };
@@ -105,8 +114,8 @@ function showPet() {
   const width = PET_WIDTH;
   const height = PET_HEIGHT_COLLAPSED;
   const initial = clampToWorkArea(
-    saved?.x ?? workArea.x + workArea.width - width - 28,
-    saved?.y ?? workArea.y + workArea.height - height - 28,
+    saved?.x ?? workArea.x + workArea.width - width - 4,
+    saved?.y ?? workArea.y + workArea.height - height - 4,
     width,
     height,
   );
@@ -141,10 +150,16 @@ function showPet() {
 function resizePet(width: number, height: number) {
   if (!petWindow || petWindow.isDestroyed()) return;
   if (!Number.isFinite(width) || !Number.isFinite(height)) return;
-  const nextWidth = Math.round(Math.min(360, Math.max(300, width)));
-  const nextHeight = Math.round(Math.min(860, Math.max(300, height)));
+  const nextWidth = Math.round(Math.min(280, Math.max(180, width)));
+  const nextHeight = Math.round(Math.min(720, Math.max(160, height)));
   const bounds = petWindow.getBounds();
-  const next = clampToWorkArea(bounds.x + bounds.width - nextWidth, bounds.y + bounds.height - nextHeight, nextWidth, nextHeight);
+  // Anchor bottom-right so shrinking empty chrome lets the dog move into the corner.
+  const next = clampToWorkArea(
+    bounds.x + bounds.width - nextWidth,
+    bounds.y + bounds.height - nextHeight,
+    nextWidth,
+    nextHeight,
+  );
   if (next.x === bounds.x && next.y === bounds.y && next.width === bounds.width && next.height === bounds.height) return;
   petWindow.setBounds(next);
   writeSavedBounds();

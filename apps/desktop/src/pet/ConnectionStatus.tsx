@@ -7,11 +7,22 @@ const labels: Record<ConnectionPhase, string> = {
   disconnected: '连接断开',
 };
 
-export function ConnectionStatus({ phase }: { phase: ConnectionPhase }) {
+export function ConnectionStatus({
+  phase,
+  compact = false,
+}: {
+  phase: ConnectionPhase;
+  compact?: boolean;
+}) {
   return (
-    <div className={`pet-connection pet-connection-${phase}`} data-interactive aria-live="polite">
+    <div
+      className={`pet-connection pet-connection-${phase}${compact ? ' is-compact' : ''}`}
+      data-interactive
+      aria-live="polite"
+      title={labels[phase]}
+    >
       <span className="pet-connection-dot" aria-hidden="true" />
-      <span>{labels[phase]}</span>
+      {!compact && <span>{labels[phase]}</span>}
     </div>
   );
 }

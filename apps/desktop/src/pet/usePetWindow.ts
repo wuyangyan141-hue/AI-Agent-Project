@@ -10,7 +10,7 @@ export function usePetWindowLayout(chatOpen: boolean) {
     if (!node) return;
 
     const publish = () => {
-      const height = Math.ceil(node.getBoundingClientRect().height + 12);
+      const height = Math.ceil(node.getBoundingClientRect().height + 4);
       window.desktop?.resizePet(PET_WINDOW_WIDTH, height);
     };
 

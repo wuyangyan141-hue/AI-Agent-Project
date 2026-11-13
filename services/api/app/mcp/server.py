@@ -27,30 +27,52 @@ def complete_study_task(task_id: int) -> dict:
     return {'id': task_id, 'done': True}
 
 @mcp.tool()
-def start_focus_timer(minutes: int = 25, task_id: int | None = None) -> dict:
-    """Start a focus timer; at most one timer is active."""
-    if not 1 <= minutes <= 240:
+def start_focus_timer(minutes: float = 25, task_id: int | None = None) -> dict:
+    """Start a focus timer; at most one timer is active. Minutes may be fractional (e.g. 0.5 = 30s)."""
+    if not 0 < float(minutes) <= 240:
         raise ValueError('Invalid duration')
     with store.connect() as db:
-        result = store.start_focus(db, task_id, minutes)
+        result = store.start_focus(db, task_id, float(minutes))
     if result is None:
         raise ValueError('Task not found')
     return result
 
 @mcp.tool()
 def finish_focus_timer(session_id: int | None = None) -> dict:
-    """Finish the active focus timer and record a small study streak."""
+    """Finish the active focus timer; linked tasks are marked done and earn bones once."""
     from ..skills.learning_loop import mark_study_activity
     with store.connect() as db:
         status = store.focus_status(db)
         if status is None:
             raise ValueError('No active focus session')
         target = session_id or status['id']
-        minutes = int(status.get('duration_minutes') or 0)
+        if status.get('id') != target:
+            raise ValueError('Active session not found')
+        minutes = float(status.get('duration_minutes') or 0)
+        task_id = status.get('task_id')
+        task_title = status.get('task_title')
         if not store.finish_focus(db, target):
             raise ValueError('Active session not found')
-    streak = mark_study_activity(minutes)
-    return {'id': target, 'finished': True, 'streak': streak}
+        reward = None
+        task = None
+        if task_id is not None:
+            task = store.edit_task(db, int(task_id), None, None, True)
+            if task is not None:
+                reward = task.get('reward')
+    streak = mark_study_activity(max(1, int(round(minutes))) if minutes else 0)
+    speech = (reward or {}).get('speech') if reward else None
+    if not speech and task_id is not None:
+        short = (task_title or '这项任务')[:18]
+        speech = f'汪！「{short}」打卡完成，骨头到手啦～'
+    return {
+        'id': target,
+        'finished': True,
+        'task_id': task_id,
+        'task': task,
+        'reward': reward,
+        'speech': speech,
+        'streak': streak,
+    }
 
 @mcp.tool()
 def get_focus_timer() -> dict:
@@ -62,32 +84,20 @@ def get_focus_timer() -> dict:
 def start_review_question(topic: str) -> dict:
     """Create one guided review question for a topic."""
     from ..skills.review_session import begin_review
+    from ..skills.review_session import save_review, public_review
     review = begin_review(topic)
     with store.connect() as db:
-        cursor = db.execute(
-            'INSERT INTO review_sessions(topic, question) VALUES (?, ?)',
-            (review['topic'], review['question']),
-        )
-        db.commit()
-    return {'id': cursor.lastrowid, **review, 'status': 'waiting'}
+        return public_review(save_review(db,review))
 
 @mcp.tool()
 def write_review_result(review_id: int, answer: str) -> dict:
-    """Grade and persist a review answer for an open review session."""
-    from ..skills.review_session import evaluate_review
+    """Grade an answer against the original saved question and evidence."""
+    from ..skills.review_session import grade_saved_review
     from ..skills.learning_loop import mark_study_activity
     with store.connect() as db:
-        row = db.execute('SELECT topic, status FROM review_sessions WHERE id=?', (review_id,)).fetchone()
-        if row is None or row['status'] != 'waiting':
-            raise ValueError('Review missing or already answered')
-        result = evaluate_review(row['topic'], answer)
-        db.execute(
-            'UPDATE review_sessions SET answer=?, feedback=?, status=? WHERE id=?',
-            (answer, result['feedback'], result['result'], review_id),
-        )
-        db.commit()
+        result=grade_saved_review(db,review_id,answer)
     mark_study_activity(0)
-    return {'id': review_id, **result}
+    return result
 
 @mcp.tool()
 def get_learning_next_step(after: str = '') -> dict:

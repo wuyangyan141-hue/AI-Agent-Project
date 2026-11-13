@@ -72,6 +72,15 @@ class Database:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS bookmarks_user ON knowledge_bookmarks(user_id);
+                CREATE TABLE IF NOT EXISTS knowledge_session_context (
+                    session_id TEXT PRIMARY KEY REFERENCES knowledge_sessions(id) ON DELETE CASCADE,
+                    document_ids_json TEXT NOT NULL DEFAULT 'null', topic TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS knowledge_summaries (
+                    cache_key TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+                    payload_json TEXT NOT NULL, created_at TEXT NOT NULL
+                );
             """)
 
     @contextmanager
