@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { ChatMessage, Source } from './knowledge';
+import { messageShowsRagSources } from './knowledge';
 import type { HitlKind, HitlRequiredEvent, HitlSchema, ServerEvent } from './protocol';
 
 export type PendingHitl = {
@@ -105,7 +106,7 @@ export function createConversationStore(port?: Port, disk?: Disk) {
         documentIds:contextIds||[],
         scope: current.scope === 'chat' ? 'chat' : contextIds?.length === 1 ? contextIds[0] : contextIds && contextIds.length > 1 ? current.scope : current.scope,
         messages: [...current.messages, { id: crypto.randomUUID(), role: 'assistant', content: event.text,
-          metadata: { sources: event.sources, mode: event.answer_mode, warning: event.warning || undefined,
+          metadata: { sources: messageShowsRagSources(event.answer_mode, event.sources) ? event.sources : [], mode: event.answer_mode, warning: event.warning || undefined,
             draft: event.draft, kind: event.kind,
             review: event.review as import('./knowledge').ReviewPayload | undefined,
             today_plan: event.today_plan as import('./knowledge').TodayPlanPayload | undefined,
@@ -126,5 +127,17 @@ export const conversation = createConversationStore(channel, typeof window !== '
 if(typeof window!=='undefined')window.setInterval(()=>conversation.expire(),5000);
 export function useConversation() { return useSyncExternalStore(conversation.subscribe, conversation.getSnapshot); }
 export function scopeFields(scope: string, documentIds = conversation.getSnapshot().documentIds || []): { general: boolean; knowledge: boolean; document_ids?: string[] | null } {
-  return { general: scope === 'chat', knowledge: !['chat','auto'].includes(scope), document_ids: scope==='selection'?documentIds:['auto','all','chat'].includes(scope) ? null : [scope] };
+  // Only a single chosen document (or explicit forceKnowledge from library) pins Q&A mode.
+  // auto / all / selection still let the server infer intent (plan vs chat vs RAG).
+  const knowledge = !['chat', 'auto', 'all', 'selection'].includes(scope);
+  return {
+    general: scope === 'chat',
+    knowledge,
+    document_ids:
+      scope === 'selection'
+        ? documentIds
+        : ['auto', 'all', 'chat'].includes(scope)
+          ? null
+          : [scope],
+  };
 }

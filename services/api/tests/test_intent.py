@@ -26,6 +26,8 @@ def test_explicit_intent_routes_only_clear_commands():
     assert explicit_intent('结束打卡').action == 'done'
     assert explicit_intent('今日小测').action == 'quiz'
     assert explicit_intent('开始复习 B+树').action == 'review'
+    assert explicit_intent('開始復習').action == 'review'
+    assert explicit_intent('今日小測').action == 'quiz'
     assert explicit_intent('薄弱点回顾').action == 'weak'
     assert explicit_intent('错题再练').action == 'weak'
     assert explicit_intent('复习数据库').action == 'chat'

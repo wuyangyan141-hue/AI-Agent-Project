@@ -1,0 +1,195 @@
+/* Pawprint 组件：按钮 / 徽章 / 分段切换（配色与透明绿 + sage 融合） */
+:root {
+  --pp-cream: #fbf6ee;
+  --pp-ink: #2a2a35;
+  --pp-harbor: #2f6db5;
+  --pp-biscuit: #f2b84b;
+  --pp-biscuit-dark: #d9a03e;
+  --pp-sage: #6fa287;
+  --pp-coral: #e4745a;
+  --pp-pill: 999px;
+  --pp-radius-btn: 12px;
+}
+
+.companion-shell .pp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  border-radius: var(--pp-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
+  box-shadow: none;
+}
+
+.companion-shell .pp-btn:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+
+.companion-shell .pp-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.companion-shell .pp-btn--primary {
+  background: var(--pp-biscuit);
+  color: var(--pp-ink);
+  border-color: var(--pp-biscuit-dark);
+}
+
+.companion-shell .pp-btn--primary:hover:not(:disabled) {
+  background: #e8ad42;
+  border-color: #c89432;
+  color: var(--pp-ink);
+}
+
+.companion-shell .pp-btn--secondary {
+  background: rgba(111, 162, 135, 0.12);
+  color: var(--accent-solid, #2d6b4a);
+  border-color: rgba(111, 162, 135, 0.35);
+  font-weight: 500;
+}
+
+.companion-shell .pp-btn--secondary:hover:not(:disabled) {
+  background: rgba(111, 162, 135, 0.18);
+  border-color: rgba(111, 162, 135, 0.45);
+  color: #245a3d;
+}
+
+.companion-shell .pp-btn--quiet {
+  background: transparent;
+  color: var(--text-secondary, #5f6660);
+  border-color: var(--border-subtle, rgba(42, 62, 50, 0.06));
+  font-weight: 500;
+}
+
+.companion-shell .pp-btn--quiet:hover:not(:disabled) {
+  background: var(--accent-wash, rgba(56, 118, 84, 0.06));
+  color: var(--accent-solid, #2d6b4a);
+  border-color: var(--border, rgba(42, 62, 50, 0.11));
+}
+
+.companion-shell .pp-btn--danger {
+  background: rgba(228, 116, 90, 0.1);
+  color: #a85642;
+  border-color: rgba(228, 116, 90, 0.35);
+  font-weight: 500;
+}
+
+.companion-shell .pp-btn--danger:hover:not(:disabled) {
+  background: rgba(228, 116, 90, 0.16);
+}
+
+.companion-shell .pp-btn--compact {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.companion-shell .pp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 每屏一个主按钮：聊天发送区 */
+.companion-shell .chat-composer .pp-btn--primary {
+  flex-shrink: 0;
+}
+
+/* 分段筛选（Pawprint button group） */
+.pp-segment {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--pp-pill);
+  background: var(--accent-wash, rgba(56, 118, 84, 0.06));
+  border: 1px solid var(--border-subtle);
+}
+
+.pp-segment button {
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  font-weight: 500;
+  border-radius: var(--pp-pill) !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.pp-segment button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.65) !important;
+  transform: none !important;
+}
+
+.pp-segment button.is-active {
+  background: var(--surface-elevated, #fff) !important;
+  color: var(--accent-solid) !important;
+  border-color: rgba(111, 162, 135, 0.35) !important;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(20, 40, 28, 0.06) !important;
+}
+
+/* 状态徽章（不单靠颜色） */
+.pp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: var(--pp-pill);
+  border: 1px solid transparent;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.pp-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.pp-badge--done {
+  background: rgba(111, 162, 135, 0.15);
+  color: #2d6b4a;
+  border-color: rgba(111, 162, 135, 0.3);
+}
+
+.pp-badge--due {
+  background: rgba(242, 184, 75, 0.2);
+  color: #6b5420;
+  border-color: rgba(242, 184, 75, 0.45);
+}
+
+.pp-badge--overdue {
+  background: rgba(228, 116, 90, 0.12);
+  color: #a85642;
+  border-color: rgba(228, 116, 90, 0.35);
+}
+
+.pp-badge--upcoming {
+  background: rgba(47, 109, 181, 0.08);
+  color: #2f5f94;
+  border-color: rgba(47, 109, 181, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-shell .pp-btn:hover:not(:disabled),
+  .companion-shell .pp-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

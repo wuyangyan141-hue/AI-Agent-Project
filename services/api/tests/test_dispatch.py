@@ -120,6 +120,17 @@ def test_confused_beats_plan_command():
     assert decision.route == 'knowledge'
 
 
+def test_plan_command_beats_knowledge_route():
+    decision = resolve_turn(
+        '帮我制定复习数据库的学习计划，3天每天30分钟',
+        intent=explicit_intent('帮我制定复习数据库的学习计划，3天每天30分钟'),
+        route='knowledge',
+        waiting=False,
+    )
+    assert decision.kind == 'command'
+    assert decision.intent.action == 'plan'
+
+
 def test_confused_not_swallowed_as_plan_followup_goal():
     decision = resolve_turn(
         '完全看不懂',

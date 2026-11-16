@@ -6,15 +6,22 @@ import re
 
 def parse_quiz_utterance(text: str) -> dict:
     out: dict = {}
-    m = re.search(r'(\d+)\s*道', text)
+    from ..agent.entities import normalize_utterance
+
+    norm = normalize_utterance(text)
+    m = re.search(r'(\d+)\s*道', norm)
     if m:
         out['limit'] = max(1, min(5, int(m.group(1))))
-    if re.search(r'困难|高难度|hard', text, re.I):
+    if re.search(r'困难|高难度|hard', norm, re.I):
         out['difficulty'] = 'hard'
-    elif re.search(r'简单|轻松|容易|easy', text, re.I):
+    elif re.search(r'简单|轻松|容易|easy', norm, re.I):
         out['difficulty'] = 'easy'
-    elif re.search(r'标准|中等|normal', text, re.I):
+    elif re.search(r'标准|中等|normal', norm, re.I):
         out['difficulty'] = 'standard'
+    if re.search(r'今日小测|今天小测|每日小测', norm):
+        out.setdefault('limit', 3)
+        out.setdefault('difficulty', 'standard')
+        out['daily'] = True
     return out
 
 
@@ -31,6 +38,8 @@ def parse_plan_utterance(text: str) -> dict:
 
 def quiz_needs_hitl(params: dict) -> bool:
     if params.get('confirmed'):
+        return False
+    if params.get('daily'):
         return False
     return 'limit' not in params or 'difficulty' not in params
 

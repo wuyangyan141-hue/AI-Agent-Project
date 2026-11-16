@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { PawprintButton } from './PawprintButton';
 import type { HitlKind, HitlSchema } from './protocol';
 
 type Props = {
@@ -127,21 +128,22 @@ export function HitlPanel({ schema, kind, disabled, onSubmit, onCancel }: Props)
         </label>
       ))}
       <div className="hitl-actions">
-        <button type="submit" disabled={disabled}>
+        <PawprintButton type="submit" variant="primary" disabled={disabled}>
           {submitLabel}
-        </button>
+        </PawprintButton>
         {kind === 'plan_revise' ? (
-          <button
+          <PawprintButton
             type="button"
+            variant="secondary"
             disabled={disabled}
             onClick={() => onSubmit(buildPayload(), 'accept')}
           >
             就用这版
-          </button>
+          </PawprintButton>
         ) : null}
-        <button type="button" className="quiet" disabled={disabled} onClick={onCancel}>
+        <PawprintButton type="button" variant="quiet" disabled={disabled} onClick={onCancel}>
           取消
-        </button>
+        </PawprintButton>
       </div>
     </form>
   );

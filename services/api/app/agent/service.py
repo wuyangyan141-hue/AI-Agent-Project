@@ -60,7 +60,8 @@ class StudyAgent:
         classifier = ChatOpenAI(model=model_name, api_key=self.settings.llm_api_key, base_url=self.settings.llm_base_url, temperature=0, timeout=45, max_retries=1).with_structured_output(StudyIntent, method='function_calling')
         result = await classifier.ainvoke([
             ('system', '识别用户当前意图。明确要求制定学习计划时选 plan；明确重排未完成任务选 replan；'
-             '开始专注选 focus；复习/小测/薄弱点选 review/quiz/weak；看今日计划选 today；问下一步或卡住了选 next；其他选 chat。'
+             '开始专注选 focus；说开始/继续复习、复习一下、交互式复习等选 review；今日小测/来几道题选 quiz；薄弱点选 weak；'
+             '看今日计划选 today；问下一步或卡住了选 next；其他选 chat。'
              '用户说看不懂、听不懂、不理解、太难了、什么意思、再解释时，一律选 chat（需要讲解），绝不要选 plan。'
              'goal 填学习主题，不要编造；缺少天数用 3，缺少每天时长用 45 分钟。'),
             *[(item['role'], item['content']) for item in history[-4:]],

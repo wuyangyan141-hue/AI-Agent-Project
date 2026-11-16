@@ -63,7 +63,8 @@ def explicit_intent(text: str) -> StudyIntent:
     minutes = int(minutes_match.group(1)) if minutes_match else 45
 
     # Plan / replan first so “制定复习…计划” is not eaten by review.
-    if 1 <= days <= 14 and 15 <= minutes <= 240:
+    asks_how = bool(re.search(r'怎么|如何|怎样|是什么', text))
+    if 1 <= days <= 14 and 15 <= minutes <= 240 and not asks_how:
         if re.search(r'(重新|重排|调整).{0,10}(未完成|剩余|没做完).{0,10}(任务|计划)', text):
             return StudyIntent(action='replan', days=days, minutes_per_day=minutes)
         match = re.search(
@@ -75,8 +76,9 @@ def explicit_intent(text: str) -> StudyIntent:
             goal = re.sub(r'\s*\d{1,2}\s*天.*$', '', goal).strip()
             if goal:
                 return StudyIntent(action='plan', goal=goal, days=days, minutes_per_day=minutes)
-        if re.match(r'^\s*(?:(?:请|帮我|给我)\s*)*(?:制定|生成|安排|规划).{0,8}(?:学习)?计划', text):
-            return StudyIntent(action='plan', days=days, minutes_per_day=minutes)
+        if re.search(r'(?:制定|生成|安排|规划).{0,16}(?:学习)?计划', text):
+            if re.match(r'^\s*(?:(?:请|帮我|给我)\s*)*(?:制定|生成|安排|规划)', text) or '计划' in text:
+                return StudyIntent(action='plan', days=days, minutes_per_day=minutes)
 
     focus = _parse_focus_intent(text)
     if focus is not None:
@@ -108,7 +110,11 @@ def explicit_intent(text: str) -> StudyIntent:
     # “我来回答复习题” is a coach prompt echo — not a command to start a new review.
     if re.search(r'我来回答|直接作答|提交答案|这是我的回答', text):
         return StudyIntent()
-    if re.search(r'开始复习|来一题复习|做一题复习|交互式复习|复习一下|我想复习|我要复习|复习题', text):
+    if re.search(
+        r'开始复习|开启复习|启动复习|来一题复习|做一题复习|交互式复习|复习一下|我想复习|我要复习|'
+        r'帮我复习|给我复习|进行复习|复习题|來複習|我想複習',
+        text,
+    ):
         topic_match = re.search(r'(?:开始复习|来一题复习|做一题复习|复习一下|复习题)\s*(.+)$', text)
         topic = ''
         if topic_match:

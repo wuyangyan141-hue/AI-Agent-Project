@@ -1,0 +1,269 @@
+/* Pawprint 学习路线式布局，配色对齐本应用透明绿 */
+.pp-care-panel {
+  position: relative;
+  margin: 0 0 12px;
+  padding: 14px 44px 14px 16px;
+  background: var(--surface-elevated, #fff);
+  border: 1px solid var(--border, rgba(42, 62, 50, 0.11));
+  border-radius: 12px;
+  box-shadow: var(--shadow-card, 0 1px 2px rgba(20, 40, 28, 0.04));
+}
+
+.pp-care-panel--compact {
+  padding: 12px 44px 12px 14px;
+}
+
+.pp-care-panel--docked {
+  margin: 0;
+  max-height: min(220px, 32vh);
+  display: flex;
+  flex-direction: column;
+  border-color: rgba(111, 162, 135, 0.35);
+  background: var(--pp-cream, #fbf6ee);
+}
+
+.pp-care-panel--docked .pp-care-timeline {
+  overflow-y: auto;
+  max-height: 140px;
+  flex: 1;
+  min-height: 0;
+}
+
+.pp-care-head-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.companion-shell .pp-care-dismiss.pp-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  font-size: 17px !important;
+  line-height: 1;
+  border-radius: 8px !important;
+}
+
+.companion-shell .pp-care-dismiss.pp-btn:hover:not(:disabled) {
+  transform: none;
+}
+
+.pp-care-timeline-widget .pp-care-title {
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.pp-care-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.pp-care-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #1a1f1c);
+  letter-spacing: -0.01em;
+}
+
+.pp-care-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary, #5f6660);
+}
+
+.pp-care-summary {
+  margin: 0;
+  font-size: 11px;
+  color: var(--accent-solid, #2d6b4a);
+  white-space: nowrap;
+}
+
+.pp-care-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pp-care-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary, #8a9189);
+}
+
+.pp-care-filter-label select {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border);
+  background: var(--surface, #fafbfa);
+  color: var(--text);
+}
+
+.pp-care-empty {
+  margin: 0;
+  padding: 8px 2px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.pp-care-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 2px 0;
+  position: relative;
+}
+
+.pp-care-timeline::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--border-subtle, rgba(42, 62, 50, 0.06));
+  border-radius: 1px;
+}
+
+.pp-care-entry {
+  position: relative;
+  padding: 0 0 12px 22px;
+  animation: pp-care-in 180ms ease both;
+}
+
+.pp-care-entry:last-child {
+  padding-bottom: 2px;
+}
+
+.pp-care-entry::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-elevated, #fff);
+  box-sizing: border-box;
+  background: var(--text-tertiary, #8a9189);
+  z-index: 1;
+}
+
+.pp-care-entry.is-done::before {
+  background: var(--accent-solid, #2d6b4a);
+}
+
+.pp-care-entry.is-due::before {
+  background: #b8a44a;
+}
+
+.pp-care-entry.is-overdue::before {
+  background: #c46b52;
+}
+
+.pp-care-entry.is-upcoming::before {
+  background: var(--border, rgba(42, 62, 50, 0.2));
+}
+
+.pp-care-entry.is-suggestion {
+  padding-bottom: 14px;
+}
+
+.pp-care-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.pp-care-entry-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.pp-l-care .pp-care-entry.is-late::before {
+  background: var(--pp-coral, #e4745a);
+}
+
+.pp-l-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pp-care-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.pp-care-entry.is-done .pp-care-status {
+  color: var(--accent-solid);
+}
+
+.pp-care-entry.is-overdue .pp-care-status {
+  color: #a85642;
+}
+
+.pp-care-toolbar {
+  align-items: center;
+}
+
+.pp-care-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.pp-care-completed {
+  color: var(--accent-muted, rgba(56, 118, 84, 0.72));
+}
+
+.pp-care-actions {
+  margin-top: 6px;
+}
+
+.pp-care-actions button {
+  font-size: 11px;
+  padding: 4px 8px !important;
+}
+
+@keyframes pp-care-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-care-entry {
+    animation: none;
+  }
+}

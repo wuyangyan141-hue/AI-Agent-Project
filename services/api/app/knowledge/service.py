@@ -795,6 +795,13 @@ class KnowledgeService:
             self.set_context(user_id,session_id,document_ids,topic=topic)
         return self.record_exchange(user_id,question,answer,session_id,dict(base,sources=sources,mode=mode,warning=warning,quotes=quotes,retrieval_query=query))
 
+    # Modes where the UI should show RAG chunk citations under the message.
+    RAG_CITATION_MODES = frozenset({
+        'llm', 'extractive', 'extractive_overview', 'overview', 'summary', 'memory',
+        'comparison', 'citation_fallback', 'no_evidence', 'clarification', 'model_error',
+        'review_feedback',
+    })
+
     def record_exchange(self, user_id, question, answer, session_id=None, metadata=None):
         timestamp = now()
         if session_id:
@@ -803,6 +810,9 @@ class KnowledgeService:
             session_id = uid()
             self.db.execute("INSERT INTO knowledge_sessions VALUES(?,?,?,?,?)", (session_id, user_id, question[:36], timestamp, timestamp))
         payload = {"sources": [], "mode": "agent", **(metadata or {}), "session_id": session_id, "answer": answer, "context": self.context(user_id,session_id)}
+        mode = str(payload.get('mode') or 'agent')
+        if mode not in self.RAG_CITATION_MODES:
+            payload['sources'] = []
         with self.db.connect() as conn:
             conn.execute("INSERT INTO knowledge_messages VALUES(?,?,?,?,?,?)", (uid(), session_id, "user", question, "{}", timestamp))
             conn.execute("INSERT INTO knowledge_messages VALUES(?,?,?,?,?,?)", (

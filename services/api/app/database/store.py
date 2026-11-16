@@ -143,6 +143,21 @@ def purge_task(db: sqlite3.Connection, task_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+def soft_delete_plan_tasks(db: sqlite3.Connection) -> list[int]:
+    """Move all scheduled (plan) tasks to trash; manual tasks without scheduled_day stay."""
+    rows = db.execute(
+        'SELECT id FROM tasks WHERE deleted_at IS NULL AND scheduled_day IS NOT NULL ORDER BY id'
+    ).fetchall()
+    if not rows:
+        return []
+    stamp = datetime.now(timezone.utc).isoformat()
+    ids = [int(row['id']) for row in rows]
+    for task_id in ids:
+        db.execute('UPDATE tasks SET deleted_at = ? WHERE id = ?', (stamp, task_id))
+    db.commit()
+    return ids
+
+
 def edit_task(db: sqlite3.Connection, task_id: int, title: str | None, minutes: int | None, done: bool | None) -> dict | None:
     row = db.execute('SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL', (task_id,)).fetchone()
     if row is None:
