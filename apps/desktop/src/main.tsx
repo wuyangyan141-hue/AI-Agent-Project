@@ -4,7 +4,8 @@ import { messageEvent, parseHitlRequired, parseServerEvent, type PetState } from
 import { HitlPanel } from './HitlPanel';
 import { DogAvatar } from './DogAvatar';
 import { KnowledgePanels } from './KnowledgePanels';
-import { api,request,sourcePosition,type ChatMessage,type Source,type KnowledgeDocument,type LearningNextStep,type ReviewChoice } from './knowledge';
+import { api,request,sourcePosition,type ChatMessage,type Source,type KnowledgeDocument,type LearningNextStep,type LearningProject,type ReviewChoice } from './knowledge';
+import { ProjectSidebar } from './ProjectSidebar';
 import type { PanelTab } from './desktop';
 import './desktop';
 import { conversation, useConversation, scopeFields } from './chatStore';
@@ -82,6 +83,151 @@ function App() {
   type LearnerProfile = { answer_style: 'concise' | 'detailed' | 'socratic'; tone: string; language: string; background: string; notes: string };
   const [learner, setLearner] = useState<LearnerProfile>({ answer_style: 'concise', tone: 'friendly', language: 'zh', background: '', notes: '' });
   const [learnerBusy, setLearnerBusy] = useState(false);
+  const [projects, setProjects] = useState<LearningProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
+
+  async function loadProjects() {
+    let list = await request<LearningProject[]>('/knowledge/projects');
+    if (!list.length) {
+      const created = await request<LearningProject>('/knowledge/projects/ensure-default', { method: 'POST' });
+      list = [created];
+    }
+    setProjects(list);
+    return list;
+  }
+
+  async function activateProject(project: LearningProject, opts?: { force?: boolean }) {
+    if (sending && !opts?.force) {
+      setNotice('等当前回复完成后再切换学习夹。');
+      return;
+    }
+    setActiveProjectId(project.id);
+    localStorage.setItem('companion-active-project', project.id);
+    setTab('chat');
+    try {
+      const msgs = await request<ChatMessage[]>(`/knowledge/sessions/${project.session_id}/messages`);
+      const scope =
+        project.document_ids.length === 1
+          ? project.document_ids[0]
+          : project.document_ids.length > 1
+            ? 'selection'
+            : 'auto';
+      conversation.open(project.session_id, msgs, scope, project.document_ids);
+      setDraft(null);
+    } catch (e) {
+      setNotice(String(e));
+    }
+  }
+
+  async function createProject() {
+    const name = window.prompt('新学习夹名称', '新学习夹');
+    if (!name?.trim()) return;
+    setProjectBusy(true);
+    try {
+      const project = await request<LearningProject>('/knowledge/projects', {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      await loadProjects();
+      await activateProject(project, { force: true });
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function renameProject(project: LearningProject) {
+    const name = window.prompt('学习夹名称', project.name);
+    if (!name?.trim() || name.trim() === project.name) return;
+    setProjectBusy(true);
+    try {
+      const updated = await request<LearningProject>(`/knowledge/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      await loadProjects();
+      if (activeProjectId === project.id) setActiveProjectId(updated.id);
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function deleteProject(project: LearningProject) {
+    if (!confirm(`删除学习夹「${project.name}」及其对话？`)) return;
+    setProjectBusy(true);
+    try {
+      await request(`/knowledge/projects/${project.id}`, { method: 'DELETE' });
+      const list = await loadProjects();
+      if (activeProjectId === project.id) {
+        const next = list[0];
+        if (next) await activateProject(next, { force: true });
+        else conversation.newChat();
+      }
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function attachProjectFile(projectId: string, documentId: string) {
+    setProjectBusy(true);
+    try {
+      const updated = await request<LearningProject>(`/knowledge/projects/${projectId}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ document_id: documentId }),
+      });
+      await loadProjects();
+      if (activeProjectId === projectId) await activateProject(updated, { force: true });
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function detachProjectFile(projectId: string, documentId: string) {
+    setProjectBusy(true);
+    try {
+      await request(`/knowledge/projects/${projectId}/documents/${documentId}`, { method: 'DELETE' });
+      const list = await loadProjects();
+      const updated = list.find((p) => p.id === projectId);
+      if (updated && activeProjectId === projectId) await activateProject(updated, { force: true });
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function uploadToProject(projectId: string, files: FileList | File[]) {
+    setProjectBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.append('file', file);
+        const doc = await request<KnowledgeDocument>('/knowledge/documents', { method: 'POST', body: form });
+        await request(`/knowledge/projects/${projectId}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ document_id: doc.id }),
+        });
+      }
+      setDocumentVersion((v) => v + 1);
+      const list = await loadProjects();
+      const updated = list.find((p) => p.id === projectId);
+      if (updated) await activateProject(updated, { force: true });
+      setNotice('文件已加入学习夹。');
+    } catch (e) {
+      setNotice(String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
 
   async function loadTasks() {
     try {
@@ -102,6 +248,16 @@ function App() {
     if(latest?.metadata?.next_step)setNextStep(latest.metadata.next_step);
   },[messages]);
   useEffect(() => {
+    void (async () => {
+      try {
+        const list = await loadProjects();
+        const saved = localStorage.getItem('companion-active-project');
+        const pick = list.find((p) => p.id === saved) || list[0];
+        if (pick) await activateProject(pick, { force: true });
+      } catch (e) {
+        setNotice(String(e));
+      }
+    })();
     loadTasks();
     fetch(`${api}/preferences/pet_name`).then(r => r.json()).then(v => setPetName(v.value)).catch(() => {});
     fetch(`${api}/focus`).then(r => r.json()).then(setFocus).catch(() => {});
@@ -261,8 +417,9 @@ function App() {
   function askKnowledge(text:string,documentId?:string){
     setTab('chat');setScope(documentId||'all');if(text)sendText(text,documentId||'all',true);
   }
-  function newChat(){
-    if(sending)return;conversation.newChat();setDraft(null);setSource(null);setTab('chat');setInput('');
+  function newChat() {
+    if (sending) return;
+    void createProject();
   }
   function submitHitl(payload: Record<string, string | number>) {
     const hitl = shared.pendingHitl;
@@ -508,57 +665,57 @@ function App() {
     setReviewAnswer(option.key);
     await submitReview(option.key);
   }
-  const navItems: { key: PanelTab; label: string }[] = [
-    { key: 'chat', label: '聊天' },
-    { key: 'library', label: '知识库' },
-    { key: 'tasks', label: '任务' },
-    { key: 'memory', label: '偏好' },
-    { key: 'history', label: '历史' },
-    { key: 'settings', label: '设置' },
-  ];
+  const tabTitles: Record<PanelTab, string> = {
+    chat: activeProject?.name || '聊天',
+    library: '资料库',
+    tasks: '任务',
+    memory: '偏好',
+    history: '历史',
+    settings: '设置',
+  };
   const statusLine = `${connection} · ${labels[pet]}${mode === 'demo' ? ' · 离线' : ' · 已配置模型'}`;
 
   return <main className="companion-panel companion-shell">
-    <aside className="app-sidebar">
-      <div className="app-sidebar-brand">
-        <button type="button" className="header-dog" title="显示桌宠" aria-label="显示桌宠" onClick={() => window.desktop?.showPet()}><DogAvatar state={pet}/></button>
-        <strong>{petName}</strong>
-      </div>
-      <nav aria-label="功能">
-        {navItems.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={tab === item.key ? 'active' : ''}
-            onClick={() => {
-              setTab(item.key);
-              if (item.key === 'tasks') loadTasks();
-              if (item.key === 'settings') {
-                loadLlmSettings();
-                loadLearnerProfile();
-              }
-            }}
-          >
-            {item.label}
-            {item.key === 'library' && documents.length > 0 && <span className="tab-count">{documents.length}</span>}
-          </button>
-        ))}
-      </nav>
-    </aside>
+    <ProjectSidebar
+      petName={petName}
+      petState={pet}
+      tab={tab}
+      documents={documents}
+      projects={projects}
+      activeProjectId={activeProjectId}
+      libraryCount={documents.length}
+      busy={projectBusy || sending}
+      onShowPet={() => window.desktop?.showPet()}
+      onSelectTab={(next) => {
+        setTab(next);
+        if (next === 'tasks') loadTasks();
+        if (next === 'settings') {
+          loadLlmSettings();
+          loadLearnerProfile();
+        }
+      }}
+      onSelectProject={(project) => void activateProject(project)}
+      onCreateProject={() => void createProject()}
+      onRenameProject={(project) => void renameProject(project)}
+      onDeleteProject={(project) => void deleteProject(project)}
+      onAttachFile={attachProjectFile}
+      onDetachFile={detachProjectFile}
+      onUploadToProject={(id, files) => void uploadToProject(id, files)}
+    />
     <div className="app-main">
     <header className="app-header">
       <div>
-        <h1 className="app-title">{navItems.find((n) => n.key === tab)?.label || '豆豆'}</h1>
+        <h1 className="app-title">{tabTitles[tab]}</h1>
         <p className="app-status"><span className={`connection-dot ${connection === '已连接' ? 'online' : ''}`} />{statusLine}</p>
       </div>
       <div className="header-actions">
-        <button type="button" className="quiet" disabled={sending} onClick={newChat}>新对话</button>
+        <button type="button" className="quiet" disabled={sending || projectBusy} onClick={newChat}>新学习夹</button>
         {window.desktop && <button type="button" className="quiet" onClick={() => window.desktop?.showPet()}>桌宠</button>}
       </div>
     </header>
     <div className="panel-body">
-    {tab==='chat'&&<div className="chat-workspace"><section ref={transcriptRef} className="chat-transcript" aria-label="对话记录">{messages.length===0?<div className="chat-greeting"><h2 className="chat-empty-title">开始对话</h2><p>提问、做计划或小测；有资料时回答会附可核对出处。</p><div className="greeting-actions"><button type="button" onClick={()=>setTab('library')}>上传资料</button><button type="button" className="quiet" onClick={()=>setInput('帮我制定复习数据库的学习计划，3天每天30分钟')}>示例：三天学习计划</button></div></div>:messages.map(message=><article className={`chat-message ${message.role}`} key={message.id}><div className="chat-speaker">{message.role==='user'?'你':petName}{message.metadata?.mode&&<span className="answer-mode">{message.metadata.mode==='memory'?'个人记忆':['overview','summary','extractive_overview'].includes(message.metadata.mode)?'全文摘要':message.metadata.mode==='comparison'?'资料比较':message.metadata.mode==='general'?'普通聊天':message.metadata.mode==='review'||message.metadata.mode==='review_feedback'?'复习反馈':message.metadata.mode==='review_question'?'复习题':message.metadata.mode==='llm'?'依据资料回答':message.metadata.mode==='clarification'?'需要说明':message.metadata.mode==='no_evidence'?'资料不足':message.metadata.mode==='agent'?'学习助手':'检索原文'}</span>}</div>{message.metadata?.warning&&<p className="answer-warning">{message.metadata.warning}</p>}<div className="chat-content">{message.content.split(/(\[S\d+\])/g).map((part,i)=>{const citation=message.metadata?.sources?.find(s=>`[${s.id}]`===part);return citation?<button className="citation-button" key={i} onClick={()=>setSource(citation)}>{part}</button>:<React.Fragment key={i}>{part}</React.Fragment>;})}</div>{!!message.metadata?.sources?.length&&<div className="source-pills">{message.metadata.sources.map(s=><button key={s.id} onClick={()=>setSource(s)}><span>{s.id}</span>{s.filename} · {sourcePosition(s)}</button>)}</div>}{!!message.metadata?.review?.options?.length&&(message.metadata.mode==='review'||message.metadata.mode==='review_question')&&<div className="chat-review-options" role="group" aria-label="选择题选项">{message.metadata.review.options.map(option=><button key={option.key} type="button" disabled={sending||connection!=='已连接'} onClick={()=>sendText(option.key)}>{option.key}. {option.text}</button>)}</div>}</article>)}{sending&&<p className="thinking-line"><span/>{activity||'豆豆正在思考…'}</p>}<div ref={messagesEnd}/></section>{nextStep&&<div className="next-step-card" role="status"><strong>{nextStep.title}</strong><p>{nextStep.suggestion}</p><button type="button" disabled={sending||connection!=='已连接'} onClick={()=>{if(nextStep.action==='upload')setTab('library');else if(nextStep.action==='review_answer'){setInput(nextStep.placeholder||'');setTab('chat');}else if(nextStep.prompt)sendText(nextStep.prompt);}}>{nextStep.action==='review_answer'?'去输入框作答':('继续：'+(nextStep.prompt||nextStep.title||'').slice(0,18)+((nextStep.prompt||'').length>18?'…':''))}</button>{!!streak?.current_streak&&<span className="streak-chip">连续 {streak.current_streak} 天</span>}</div>}{shared.pendingHitl&&<HitlPanel schema={shared.pendingHitl.hitl} kind={shared.pendingHitl.kind} interruptId={shared.pendingHitl.interruptId} requestId={shared.pendingHitl.requestId} sessionId={shared.sessionId} disabled={connection!=='已连接'} onSubmit={submitHitl} onCancel={()=>conversation.cancelHitl()}/>}<div className="chat-quick-reviews" role="group" aria-label="一键学习"><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('今日计划')}>今日计划</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('今日小测')}>今日小测</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('薄弱点回顾')}>薄弱点回顾</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('开始复习')}>开始复习</button></div><form className="chat-composer" onSubmit={send}><textarea aria-label="消息" value={input} onChange={e=>setInput(e.target.value)} placeholder="问问资料里的内容，或告诉豆豆你的学习计划…" maxLength={4000} rows={2} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();sendText(input);}}}/><div className="composer-bottom"><select aria-label="资料检索范围" value={scope} onChange={e=>setScope(e.target.value)}><option value="auto">自动 · 知识与学习助手</option><option value="chat">普通聊天 · 不查知识库</option><option value="all">全部知识库</option>{scope==='selection'&&<option value="selection">已选 {shared.documentIds?.length||0} 份资料</option>}{documents.filter(d=>d.status==='ready'&&!d.needs_reindex).map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select><button disabled={connection!=='已连接'||sending||!input.trim()}>{sending?'思考中…':'发送 ↑'}</button></div></form><details className="plan-options"><summary>把输入作为学习目标生成计划</summary><div className="controls"><label>计划天数<input aria-label="聊天计划天数" type="number" min={1} max={14} value={days} onChange={e=>setDays(Number(e.target.value))}/></label><label>每天分钟<input aria-label="聊天每日分钟" type="number" min={15} max={240} value={dailyMinutes} onChange={e=>setDailyMinutes(Number(e.target.value))}/></label><button onClick={planFromChat} disabled={!input.trim()||input.trim().length>200||sending||connection!=='已连接'}>生成待确认草稿</button></div></details>{draft&&<div className="draft"><h3>待确认的计划草稿</h3><ol>{(draft.steps||draft.schedule||[]).map((step,i)=><li key={i}>第 {step.day} 天 · {step.title} · {step.minutes} 分钟</li>)}</ol><button onClick={confirmDraft}>确认并保存任务</button><button className="quiet" onClick={()=>setDraft(null)}>取消</button></div>}</div>}
-    {['library','memory','history'].includes(tab)&&<KnowledgePanels pane={tab as 'library'|'memory'|'history'} onOpenConversation={openConversation} onAsk={askKnowledge} onActivity={(state,text)=>{setPet(state);setActivity(text);}} onDocuments={()=>setDocumentVersion(v=>v+1)} onDeleteConversation={id=>{if(session.current===id){conversation.newChat();setDraft(null);}}}/>}
+    {tab==='chat'&&<div className="chat-workspace"><section ref={transcriptRef} className="chat-transcript" aria-label="对话记录">{messages.length===0?<div className="chat-greeting"><h2 className="chat-empty-title">开始对话</h2><p>提问、做计划或小测；有资料时回答会附可核对出处。</p><div className="greeting-actions"><p className="muted" style={{width:'100%',margin:0}}>在左侧学习夹展开后，可上传或加入资料。</p><button type="button" onClick={()=>setTab('library')}>打开资料库</button><button type="button" className="quiet" onClick={()=>setInput('帮我制定复习数据库的学习计划，3天每天30分钟')}>示例：三天学习计划</button></div></div>:messages.map(message=><article className={`chat-message ${message.role}`} key={message.id}><div className="chat-speaker">{message.role==='user'?'你':petName}{message.metadata?.mode&&<span className="answer-mode">{message.metadata.mode==='memory'?'个人记忆':['overview','summary','extractive_overview'].includes(message.metadata.mode)?'全文摘要':message.metadata.mode==='comparison'?'资料比较':message.metadata.mode==='general'?'普通聊天':message.metadata.mode==='review'||message.metadata.mode==='review_feedback'?'复习反馈':message.metadata.mode==='review_question'?'复习题':message.metadata.mode==='llm'?'依据资料回答':message.metadata.mode==='clarification'?'需要说明':message.metadata.mode==='no_evidence'?'资料不足':message.metadata.mode==='agent'?'学习助手':'检索原文'}</span>}</div>{message.metadata?.warning&&<p className="answer-warning">{message.metadata.warning}</p>}<div className="chat-content">{message.content.split(/(\[S\d+\])/g).map((part,i)=>{const citation=message.metadata?.sources?.find(s=>`[${s.id}]`===part);return citation?<button className="citation-button" key={i} onClick={()=>setSource(citation)}>{part}</button>:<React.Fragment key={i}>{part}</React.Fragment>;})}</div>{!!message.metadata?.sources?.length&&<div className="source-pills">{message.metadata.sources.map(s=><button key={s.id} onClick={()=>setSource(s)}><span>{s.id}</span>{s.filename} · {sourcePosition(s)}</button>)}</div>}{!!message.metadata?.review?.options?.length&&(message.metadata.mode==='review'||message.metadata.mode==='review_question')&&<div className="chat-review-options" role="group" aria-label="选择题选项">{message.metadata.review.options.map(option=><button key={option.key} type="button" disabled={sending||connection!=='已连接'} onClick={()=>sendText(option.key)}>{option.key}. {option.text}</button>)}</div>}</article>)}{sending&&<p className="thinking-line"><span/>{activity||'豆豆正在思考…'}</p>}<div ref={messagesEnd}/></section>{nextStep&&<div className="next-step-card" role="status"><strong>{nextStep.title}</strong><p>{nextStep.suggestion}</p><button type="button" disabled={sending||connection!=='已连接'} onClick={()=>{if(nextStep.action==='upload')setTab('library');else if(nextStep.action==='review_answer'){setInput(nextStep.placeholder||'');setTab('chat');}else if(nextStep.prompt)sendText(nextStep.prompt);}}>{nextStep.action==='review_answer'?'去输入框作答':('继续：'+(nextStep.prompt||nextStep.title||'').slice(0,18)+((nextStep.prompt||'').length>18?'…':''))}</button>{!!streak?.current_streak&&<span className="streak-chip">连续 {streak.current_streak} 天</span>}</div>}{shared.pendingHitl&&<HitlPanel schema={shared.pendingHitl.hitl} kind={shared.pendingHitl.kind} interruptId={shared.pendingHitl.interruptId} requestId={shared.pendingHitl.requestId} sessionId={shared.sessionId} disabled={connection!=='已连接'} onSubmit={submitHitl} onCancel={()=>conversation.cancelHitl()}/>}<div className="chat-quick-reviews" role="group" aria-label="一键学习"><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('今日计划')}>今日计划</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('今日小测')}>今日小测</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('薄弱点回顾')}>薄弱点回顾</button><button type="button" className="quiet" disabled={sending||connection!=='已连接'} onClick={()=>sendText('开始复习')}>开始复习</button></div><form className="chat-composer" onSubmit={send}><textarea aria-label="消息" value={input} onChange={e=>setInput(e.target.value)} placeholder="问问资料里的内容，或告诉豆豆你的学习计划…" maxLength={4000} rows={2} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();sendText(input);}}}/><div className="composer-bottom"><select aria-label="资料检索范围" value={scope} onChange={e=>setScope(e.target.value)}><option value="auto">自动 · 知识与学习助手</option><option value="chat">普通聊天 · 不查知识库</option><option value="all">全部知识库</option>{scope==='selection'&&<option value="selection">已选 {shared.documentIds?.length||0} 份资料</option>}{documents.filter(d=>d.status==='ready'&&!d.needs_reindex).map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select><button disabled={connection!=='已连接'||sending||!input.trim()}>{sending?'思考中…':'发送 ↑'}</button></div></form><details className="plan-options"><summary>把输入作为学习目标生成计划</summary><div className="controls"><label>计划天数<input aria-label="聊天计划天数" type="number" min={1} max={14} value={days} onChange={e=>setDays(Number(e.target.value))}/></label><label>每天分钟<input aria-label="聊天每日分钟" type="number" min={15} max={240} value={dailyMinutes} onChange={e=>setDailyMinutes(Number(e.target.value))}/></label><button onClick={planFromChat} disabled={!input.trim()||input.trim().length>200||sending||connection!=='已连接'}>生成待确认草稿</button></div></details>{draft&&<div className="draft"><h3>待确认的计划草稿</h3><ol>{(draft.steps||draft.schedule||[]).map((step,i)=><li key={i}>第 {step.day} 天 · {step.title} · {step.minutes} 分钟</li>)}</ol><button onClick={confirmDraft}>确认并保存任务</button><button className="quiet" onClick={()=>setDraft(null)}>取消</button></div>}</div>}
+    {['library','memory','history'].includes(tab)&&<KnowledgePanels pane={tab as 'library'|'memory'|'history'} onOpenConversation={openConversation} onAsk={askKnowledge} onActivity={(state,text)=>{setPet(state);setActivity(text);}} onDocuments={()=>{setDocumentVersion(v=>v+1);void loadProjects();}} onDeleteConversation={id=>{if(session.current===id){conversation.newChat();setDraft(null);}void loadProjects();}}/>}
     {tab === 'tasks' && <section><h2>学习计划</h2><p className="streak-banner">骨头 {streak?.bones||0} · 已完成任务 {streak?.tasks_completed||0}{(streak?.current_streak)?` · 连续学习 ${streak.current_streak} 天`:''} · 累计专注 {streak?.total_focus_minutes||0} 分钟{(streak?.achievement_labels||streak?.achievements||[]).length?` · 成就：${(streak?.achievement_labels||streak?.achievements||[]).join('、')}`:''}</p><div className="bones-shop"><p className="muted">骨头用途：每个任务只能领一次。攒够后可花 {streak?.feed_cost||3} 根喂豆豆，换一句鼓励并让桌宠开心一下。</p><button type="button" onClick={feedPetWithBones} disabled={(streak?.bones||0)<(streak?.feed_cost||3)}>喂豆豆（{streak?.feed_cost||3} 骨头）</button></div><div className="controls"><input aria-label="学习目标" value={goal} onChange={e => setGoal(e.target.value)} placeholder="例如：复习数据库索引"/><label>天数<input aria-label="计划天数" type="number" min={1} max={14} value={days} onChange={e => setDays(Number(e.target.value))}/></label><label>每天分钟<input aria-label="每日分钟" type="number" min={15} max={240} value={dailyMinutes} onChange={e => setDailyMinutes(Number(e.target.value))}/></label></div><div className="controls"><button onClick={() => createDraft('plan')} disabled={!goal.trim()}>生成新计划</button><button onClick={() => createDraft('replan')}>重新安排未完成任务</button></div>{draft && <div className="draft"><h3>计划草稿（尚未保存）</h3><p>{draft.reason}</p><ol>{(draft.steps || draft.schedule || []).map((step, i) => <li key={i}>第 {step.day} 天 · {step.title} · {step.minutes} 分钟</li>)}</ol><button onClick={confirmDraft}>确认并保存</button><button onClick={() => setDraft(null)}>取消</button></div>}<h2>学习任务</h2><form onSubmit={addTask}><input aria-label="新任务" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="例如：复习数据库索引" maxLength={200}/><button>添加</button></form><ul className="task-list">{tasks.map(task => <li key={task.id}><label><input type="checkbox" checked={task.done} onChange={() => toggleTask(task)}/><span className={task.done ? 'done' : ''}>{task.title} · {task.estimated_minutes} 分钟{task.scheduled_day ? ` · 第 ${task.scheduled_day} 天` : ''}{task.bones_awarded ? ' · 已领过骨头' : ''}</span></label><button type="button" onClick={() => editTask(task)}>修改</button><button type="button" className="quiet" onClick={() => deleteTask(task)}>删除</button></li>)}</ul><div className="trash-panel"><button type="button" className="quiet trash-toggle" onClick={() => setShowTrash(v => !v)}>回收站{trash.length ? `（${trash.length}）` : ''}{showTrash ? ' ▾' : ' ▸'}</button>{showTrash && (trash.length ? <ul className="task-list trash-list">{trash.map(task => <li key={task.id}><span className="trash-title">{task.title} · {task.estimated_minutes} 分钟{task.scheduled_day ? ` · 第 ${task.scheduled_day} 天` : ''}{task.done ? ' · 已完成' : ''}</span><button type="button" onClick={() => restoreTask(task)}>恢复</button><button type="button" className="quiet" onClick={() => purgeTask(task)}>永久删除</button></li>)}</ul> : <p className="muted trash-empty">回收站是空的。</p>)}</div><h2>专注计时</h2>{focus.id ? <div><strong>{Math.floor(focus.remaining_seconds / 60)}:{String(focus.remaining_seconds % 60).padStart(2, '0')}</strong><button onClick={stopFocus}>结束</button></div> : <div className="controls"><input aria-label="专注分钟" type="number" min={1} max={240} value={focusMinutes} onChange={e => setFocusMinutes(Number(e.target.value))}/><button onClick={startFocus}>开始专注</button></div>}<h2>交互式复习</h2><div className="controls"><input aria-label="复习知识点" value={reviewTopic} onChange={e => setReviewTopic(e.target.value)} placeholder="例如：B+树"/><button onClick={startReview} disabled={!reviewTopic.trim()}>开始复习</button><button className="quiet" onClick={async()=>{try{const quiz=await requestJson('/reviews/daily-quiz','POST',{session_id:session.current,...scopeFields(scope)});setReview(quiz.items?.[0]||null);setReviewFeedback('');setNotice(`今日小测 ${quiz.count} 题已就绪`);}catch(e){setNotice(String(e));}}}>今日小测</button><button className="quiet" onClick={async()=>{try{const item=await requestJson('/reviews/weak-point','POST',{session_id:session.current,...scopeFields(scope)});setReview(item);setReviewFeedback('');setNotice('已挑出薄弱点回顾题');}catch(e){setNotice(String(e));}}}>薄弱点回顾</button></div>{review && <div className="review-card"><p className="review-stem">{review.stem || review.question}</p>{!!review.options?.length && <div className="review-options" role="group" aria-label="选项">{review.options.map(option=><button key={option.key} type="button" className={reviewAnswer===option.key?'active':''} onClick={()=>pickReviewOption(option)}><span>{option.key}</span>{option.text}</button>)}</div>}{(!review.options?.length || !['multiple_choice','true_false'].includes(review.question_type||'')) && <><textarea aria-label="我的回答" value={reviewAnswer} onChange={e => setReviewAnswer(e.target.value)} placeholder={review.question_type==='fill_blank'?'填入关键词…':'用自己的话作答…'}/><button onClick={()=>submitReview()} disabled={!reviewAnswer.trim()}>提交回答</button></>}</div>}{reviewFeedback && <p role="status">{reviewFeedback}</p>}</section>}
     {tab === 'settings' && <section className="settings-panel"><h2>设置</h2><form onSubmit={saveName}><label htmlFor="pet-name">桌宠名字</label><input id="pet-name" value={petName} onChange={e => setPetName(e.target.value)} maxLength={100}/><button>保存</button></form>{window.desktop && <button type="button" onClick={() => window.desktop?.showPet()}>显示悬浮桌宠</button>}<h2>学习者画像</h2><p className="muted">影响答题表达方式，不会覆盖知识库证据约束。</p><form className="learner-settings" onSubmit={saveLearnerProfile}><label>回答风格<select aria-label="回答风格" value={learner.answer_style} onChange={e=>setLearner(prev=>({...prev,answer_style:e.target.value as LearnerProfile['answer_style']}))}><option value="concise">简洁</option><option value="detailed">详细分点</option><option value="socratic">启发式提问</option></select></label><label>语气<input aria-label="语气" value={learner.tone} onChange={e=>setLearner(prev=>({...prev,tone:e.target.value}))} maxLength={40}/></label><label>语言<input aria-label="语言" value={learner.language} onChange={e=>setLearner(prev=>({...prev,language:e.target.value}))} maxLength={16}/></label><label>背景<textarea aria-label="背景" value={learner.background} onChange={e=>setLearner(prev=>({...prev,background:e.target.value}))} maxLength={600} rows={3}/></label><label>补充备注<textarea aria-label="补充备注" value={learner.notes} onChange={e=>setLearner(prev=>({...prev,notes:e.target.value}))} maxLength={300} rows={2}/></label><button disabled={learnerBusy}>{learnerBusy?'保存中…':'保存学习者画像'}</button></form><h2>模型与 API</h2><p className="muted">{llm.hint || '选择离线或在线；在线模式使用你自己的 OpenAI 兼容接口。'}</p><form className="llm-settings" onSubmit={saveLlmSettings}><label>运行模式<select aria-label="运行模式" value={llm.mode} onChange={e=>setLlm(prev=>({...prev,mode:e.target.value as 'offline'|'online'}))}><option value="offline">离线 · 本地检索与模板</option><option value="online">在线 · 使用我的 API</option></select></label><label>接口预设<select aria-label="接口预设" value={llm.provider} onChange={e=>applyPreset(e.target.value)} disabled={llm.mode!=='online'}>{(llm.presets||[{id:'custom',label:'自定义 OpenAI 兼容接口',base_url:'',model:''}]).map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label>模型名<input aria-label="模型名" value={llm.llm_model} onChange={e=>setLlm(prev=>({...prev,llm_model:e.target.value}))} placeholder="例如：qwen-plus / gpt-4o-mini" disabled={llm.mode!=='online'} maxLength={120}/></label><label>Base URL<input aria-label="Base URL" value={llm.llm_base_url} onChange={e=>setLlm(prev=>({...prev,llm_base_url:e.target.value}))} placeholder="https://…/compatible-mode/v1" disabled={llm.mode!=='online'} maxLength={300}/></label><label>API Key<input aria-label="API Key" type="password" value={llm.llm_api_key} onChange={e=>setLlm(prev=>({...prev,llm_api_key:e.target.value}))} placeholder={llm.has_api_key?`已保存 ${llm.api_key_masked||''}（留空则保留）`:'填写你的密钥'} disabled={llm.mode!=='online'} maxLength={200} autoComplete="off"/></label><button disabled={llmBusy}>{llmBusy?'保存中…':'保存模型设置'}</button></form><p>当前：{llm.mode==='online'?(llm.online_ready?'在线已就绪 · 复习批改走你的 API':'在线未就绪 · 请补全模型/密钥/地址'):'离线模式'} · Agent {mode==='demo'?'演示':'LangChain'}</p></section>}
     </div>

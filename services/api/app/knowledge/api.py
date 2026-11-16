@@ -215,3 +215,73 @@ def session_context(session_id: str,service: Service,user: User):
 @router.put('/sessions/{session_id}/context')
 def update_session_context(session_id: str,body: SessionContextUpdate,service: Service,user: User):
     return service.set_context(user,session_id,body.document_ids)
+
+
+class ProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+    @field_validator('name')
+    @classmethod
+    def nonempty(cls, value):
+        if not value.strip():
+            raise ValueError('项目名称不能为空。')
+        return value.strip()
+
+
+class ProjectDocumentInput(BaseModel):
+    document_id: str = Field(min_length=8, max_length=80)
+
+
+@router.get('/projects')
+def list_projects(service: Service, user: User):
+    return service.list_projects(user)
+
+
+@router.post('/projects/ensure-default')
+def ensure_default_project(service: Service, user: User):
+    return service.ensure_default_project(user)
+
+
+@router.post('/projects', status_code=201)
+def create_project(body: ProjectInput, service: Service, user: User):
+    return service.create_project(user, body.name)
+
+
+@router.patch('/projects/{project_id}')
+def rename_project(project_id: str, body: ProjectInput, service: Service, user: User):
+    try:
+        return service.rename_project(user, project_id, body.name)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete('/projects/{project_id}', status_code=204)
+def delete_project(project_id: str, service: Service, user: User):
+    try:
+        service.delete_project(user, project_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post('/projects/{project_id}/documents', status_code=201)
+def attach_project_document(project_id: str, body: ProjectDocumentInput, service: Service, user: User):
+    try:
+        return service.add_project_document(user, project_id, body.document_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete('/projects/{project_id}/documents/{document_id}', status_code=204)
+def detach_project_document(project_id: str, document_id: str, service: Service, user: User):
+    try:
+        service.remove_project_document(user, project_id, document_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get('/projects/{project_id}')
+def get_project(project_id: str, service: Service, user: User):
+    try:
+        return service.get_project(user, project_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
