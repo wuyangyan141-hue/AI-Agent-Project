@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { ChatLine } from './types';
+import { scrollToBottom } from '../scrollToBottom';
 
 /** Past turns stacked above the single live bubble on the pet. */
 export function PetHistoryStack({
@@ -10,14 +11,14 @@ export function PetHistoryStack({
   /** Hide the duplicate of whatever the live bubble is already showing. */
   currentText?: string;
 }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const live = (currentText || '').trim();
   const history = messages
     .slice(-10)
     .filter((line) => line.content.trim() && line.content.trim() !== live);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    scrollToBottom(scrollRef.current, { smooth: true, force: true });
   }, [history.length, live]);
 
   if (!history.length) {
@@ -30,7 +31,7 @@ export function PetHistoryStack({
 
   return (
     <div className="pet-history-stack" data-interactive aria-label="历史对话">
-      <div className="pet-history-scroll">
+      <div ref={scrollRef} className="pet-history-scroll">
         {history.map((line) => (
           <div
             key={line.id}
@@ -40,7 +41,6 @@ export function PetHistoryStack({
             <p>{line.content}</p>
           </div>
         ))}
-        <div ref={endRef} />
       </div>
     </div>
   );

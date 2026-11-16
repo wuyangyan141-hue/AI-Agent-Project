@@ -28,6 +28,14 @@
 .streak-chip,.streak-banner{font-size:11px;color:#73835f}
 .streak-banner{margin:0 0 8px;line-height:1.5}
 .bones-shop{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#f4f6ee;border:1px solid #e4e9d8}
+.hitl-panel{margin:0 0 12px;padding:12px 14px;border:1px solid #d5dcc8;border-radius:12px;background:#f5f7ef;display:flex;flex-direction:column;gap:8px;max-width:420px}
+.hitl-panel h3{margin:0;font-size:13px;color:#5d684c}
+.hitl-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#6d5f4c}
+.hitl-field input,.hitl-field select{width:100%}
+.hitl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.learner-settings{display:flex;flex-direction:column;gap:10px;max-width:420px;margin:0 0 20px}
+.learner-settings label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#6d5f4c}
+.learner-settings input,.learner-settings select,.learner-settings textarea{width:100%}
 .bones-shop .muted{margin:0;flex:1 1 220px;font-size:12px;color:#8a8e76;line-height:1.45}
 .bones-shop button{flex:0 0 auto}
 .task-list{list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:8px}

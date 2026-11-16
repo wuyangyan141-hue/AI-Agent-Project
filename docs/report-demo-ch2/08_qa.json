@@ -1,0 +1,48 @@
+{
+  "sources": [
+    {
+      "id": "S1",
+      "snippet": "DSAI5205 Chapter 2\n2\nWhat is searching?\n•Searching is the process of looking for the solution of a \nproblem through a set of states.\n•Search conditions include\n•Current state: the step of where we are\n•Goal state: the step where the solution is found\n•Actions: move one state to another\n•Cost: how many steps needed to find the solution.\n•Solution: a path from the current state to the goal state.\n2\nSearching Techniques",
+      "chunk_id": "7877773b6c65426c8075211e519a5927",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 2,
+      "section": null,
+      "score": 0.967,
+      "lexical_score": 0.967,
+      "semantic_score": 0.3767,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    }
+  ],
+  "mode": "llm",
+  "warning": null,
+  "preferences_used": {},
+  "memories_used": [],
+  "quotes": [
+    {
+      "source_id": "S1",
+      "quote": "Searching is the process of looking for the solution of a \nproblem through a set of states.",
+      "claim": "Searching is the process of looking for the solution of a problem through a set of states."
+    },
+    {
+      "source_id": "S1",
+      "quote": "Goal state: the step where the solution is found",
+      "claim": "The goal in searching is to reach the goal state, which is the step where the solution is found."
+    },
+    {
+      "source_id": "S1",
+      "quote": "Solution: a path from the current state to the goal state.",
+      "claim": "The solution in searching is a path from the current state to the goal state."
+    }
+  ],
+  "retrieval_query": "What is searching and what are the goal and solution in this chapter?",
+  "session_id": "3e0c654ae1dd4f14845989fd25f91e32",
+  "answer": "Searching is the process of looking for the solution of a problem through a set of states. [S1]\n\nThe goal in searching is to reach the goal state, which is the step where the solution is found. [S1]\n\nThe solution in searching is a path from the current state to the goal state. [S1]",
+  "context": {
+    "document_ids": [
+      "dabf4e6973384ac794f2d14e1bcf9f86"
+    ],
+    "topic": "What is searching and what are the goal and solution in this chapter?"
+  }
+}

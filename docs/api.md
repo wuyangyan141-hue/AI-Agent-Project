@@ -27,6 +27,40 @@ Answer modes: `general`, `memory`, `extractive`, `llm`, `no_evidence`, `clarific
 
 `plan_request` remains supported with `payload: {goal, days, minutes_per_day}`, plus conversation/scope/request fields. It returns a `plan_draft`; tasks are saved only after confirmation.
 
+### Human-in-the-loop (protocol 2)
+
+When quiz or plan parameters are missing from the utterance, the server may pause the LangGraph flow and emit:
+
+```json
+{
+  "type": "hitl_required",
+  "text": "请确认小测题量与难度后点击「开始出题」。",
+  "state": "thinking",
+  "request_id": "same-as-outbound",
+  "session_id": "conversation-id",
+  "kind": "quiz_params",
+  "interrupt_id": "thread-id",
+  "hitl": { "kind": "quiz_params", "title": "小测设置", "fields": [], "defaults": {} }
+}
+```
+
+Resume over WebSocket:
+
+```json
+{
+  "type": "graph_resume",
+  "kind": "quiz_params",
+  "thread_id": "thread-id",
+  "session_id": "conversation-id",
+  "request_id": "same-as-outbound",
+  "payload": { "limit": 3, "difficulty": "standard" }
+}
+```
+
+REST equivalent: `POST /graph/resume` with `{ "thread_id", "kind", "payload" }`.
+
+Learner style (non-system): `GET/PUT /learner/profile` with `answer_style`, `tone`, `language`, `background`, `notes`.
+
 The pet and main renderer share full message metadata, execution status, selected scope and pending-request state through `chatStore.ts`. Saved conversation scope/topic lives in SQLite. Renderer local storage is a convenience cache; durable history remains available through the history API.
 
 ## Knowledge and memory

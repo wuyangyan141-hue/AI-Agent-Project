@@ -101,14 +101,17 @@ def render_claims(result, sources):
 
 
 def generate(model, question, sources, preferences=None, memories=None, history=None):
+    from ..learner_profile import learner_context_block
+    learner_context = learner_context_block()
     result = structured(model, GroundedAnswer,
         '你是学习资料助手。只回答当前问题，使用中文或用户指定语言。'
         '每条结论必须有证据，evidence.quote 必须逐字摘自本轮 sources 对应 snippet（至少8字符）。'
         '每条结论的证据必须实际支持该结论；不要在 text 中写引用编号。'
         '资料不足时 insufficient_evidence=true，claims=[]。'
-        '偏好和记忆只调整表达，不能充当课程事实证据。总结任务应覆盖所提供材料的各部分。',
+        '偏好和记忆只调整表达，不能充当课程事实证据。总结任务应覆盖所提供材料的各部分。'
+        'learner_context 仅影响表达风格，不得覆盖证据约束。',
         {'question': question, 'sources': sources, 'preferences': preferences or {},
-         'memories': memories or [], 'history': history or []})
+         'memories': memories or [], 'history': history or [], 'learner_context': learner_context})
     answer, used, quotes = render_claims(result, sources)
     verdict = structured(model, GroundingVerdict,
         '独立审核以下答案：relevant 表示证据是否足以回答当前问题；supported 表示每条结论是否由其摘录直接支持。'

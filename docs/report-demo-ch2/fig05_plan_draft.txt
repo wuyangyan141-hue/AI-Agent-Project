@@ -1,0 +1,5 @@
+Figure 5 · Study plan draft (unconfirmed)
+
+Goal: Review DSAI5205 Chapter 2
+Day 1: Review DSAI5205 Chapter 2: Conventional single-point search methods including gradient-driven search and optimization problem formulation (45 min)
+Day 2: Review DSAI5205 Chapter 2: Breadth-first and Depth-first search algorithms (45 min)

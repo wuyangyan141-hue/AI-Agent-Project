@@ -1,0 +1,28 @@
+{
+  "health": {
+    "status": "ok",
+    "agent_mode": "langchain",
+    "llm_mode": "online",
+    "online_ready": true,
+    "version": "0.4.0",
+    "protocol_version": 2
+  },
+  "knowledge_health": {
+    "status": "ok",
+    "llm_configured": true,
+    "model": "qwen-plus",
+    "llm_mode": "online",
+    "online_ready": true,
+    "embedding_id": "lexical-hash-v2-2048",
+    "embedding_mode": "local_lexical",
+    "answer_mode": "llm",
+    "retrieval_mode": "bm25",
+    "supported_files": [
+      ".pdf",
+      ".docx",
+      ".pptx",
+      ".txt"
+    ],
+    "max_upload_mb": 15
+  }
+}

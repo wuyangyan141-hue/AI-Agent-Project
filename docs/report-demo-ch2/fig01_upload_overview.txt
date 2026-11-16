@@ -1,0 +1,6 @@
+Figure 1 · Document ingest (DSAI5205 Chapter 2)
+
+File: DSAI5205_Chapter2_2026.pdf
+Status: ready · chunks: 66
+Keywords: Chapter, DSAI5205, Search, Goal, solution, state, algorithm, Fitness
+Backend: agent_mode=langchain, embedding=local_lexical

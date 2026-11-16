@@ -1,0 +1,67 @@
+{
+  "sources": [
+    {
+      "id": "S1",
+      "snippet": "DSAI5205 Chapter 2\n26\n•They both find a solution if one exists (and if the state isn’t too big).\n•Depth-first search:\n•If the search space contains very deep branches without \nsolution, then depth-first may waste much time in them.\n•Breadth-first search:\n•Is very demanding on memory! \n•Must remember the unexpanded nodes at a level, which could \nbecome very large as you go deeper into the tree/graph (vs. \ndepth-first remembers just the path).\nDepth-First vs. Breadth-First Search",
+      "chunk_id": "a6e42e6f46d648cb87e9b2e7d4bbd26b",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 21,
+      "section": null,
+      "score": 0.4135,
+      "lexical_score": 0.4135,
+      "semantic_score": 0.1693,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S3",
+      "snippet": "DSAI5205 Chapter 2\n23\nFrom S to G: depth first\nS\nA B\nC G\nStart from S and go to G.\nS\nA B\nS B C\n1. open=[S]; closed=[ ].\n2. open=[A, B]; closed=[S].\n3. open=[C, B]; closed=[A, S].\n4. open=[G, B]; closed=[C, A, S].\nExpand S\nExpand A\nExpand C\n5. Goal reached. Stop.\nGAX\nXX\nSolution path: S-A-C-G\n• Generally, depth-first search does not find the shortest path. In the route \nexample, by breadth-first search, the path is S-B-G; by depth-first search, the \npath is S-A-C-G.",
+      "chunk_id": "5641433e64584b46a4a072ef8e013c0a",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 20,
+      "section": null,
+      "score": 0.4115,
+      "lexical_score": 0.4115,
+      "semantic_score": 0.2082,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    }
+  ],
+  "mode": "llm",
+  "warning": null,
+  "preferences_used": {},
+  "memories_used": [],
+  "quotes": [
+    {
+      "source_id": "S1",
+      "quote": "They both find a solution if one exists (and if the state isn’t too big).",
+      "claim": "Both breadth-first search and depth-first search can find a solution if one exists, provided the state space is not too large."
+    },
+    {
+      "source_id": "S1",
+      "quote": "If the search space contains very deep branches without \nsolution, then depth-first may waste much time in them.",
+      "claim": "Depth-first search may waste time exploring very deep branches without a solution."
+    },
+    {
+      "source_id": "S1",
+      "quote": "Is very demanding on memory! \n•Must remember the unexpanded nodes at a level, which could \nbecome very large as you go deeper into the tree/graph (vs. \ndepth-first remembers just the path).",
+      "claim": "Breadth-first search is very demanding on memory because it must store all unexpanded nodes at a given level, whereas depth-first search only stores the current path."
+    },
+    {
+      "source_id": "S3",
+      "quote": "• Generally, depth-first search does not find the shortest path. In the route \nexample, by breadth-first search, the path is S-B-G; by depth-first search, the \npath is S-A-C-G.",
+      "claim": "Depth-first search does not generally find the shortest path; for example, in a route from S to G, breadth-first yields S-B-G while depth-first yields S-A-C-G."
+    }
+  ],
+  "retrieval_query": "Explain breadth-first search versus depth-first search using the lecture notes.",
+  "session_id": "5c168a0381384659a38686e70659b6fb",
+  "answer": "Both breadth-first search and depth-first search can find a solution if one exists, provided the state space is not too large. [S1]\n\nDepth-first search may waste time exploring very deep branches without a solution. [S1]\n\nBreadth-first search is very demanding on memory because it must store all unexpanded nodes at a given level, whereas depth-first search only stores the current path. [S1]\n\nDepth-first search does not generally find the shortest path; for example, in a route from S to G, breadth-first yields S-B-G while depth-first yields S-A-C-G. [S3]",
+  "context": {
+    "document_ids": [
+      "dabf4e6973384ac794f2d14e1bcf9f86"
+    ],
+    "topic": "Explain breadth-first search versus depth-first search using the lecture notes."
+  }
+}

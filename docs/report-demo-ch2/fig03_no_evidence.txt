@@ -1,0 +1,5 @@
+Figure 3 · Out-of-scope query (negative case)
+
+mode: no_evidence
+
+知识库里没有找到与「What is the capital city on Mars?」相关的可靠内容，我不会编造答案。请调整问题或资料范围。 库里目前相关的主题更接近：DSAI5205_Chapter2_2026.pdf：Chapter、DSAI5205、Search、Goal、solution

@@ -1,0 +1,63 @@
+{
+  "id": "dabf4e6973384ac794f2d14e1bcf9f86",
+  "user_id": "local-user",
+  "filename": "DSAI5205_Chapter2_2026.pdf",
+  "suffix": ".pdf",
+  "size": 6058600,
+  "sha256": "19287f4d8d767e5d02cb245b01f87d4faad2dc4c4374469cf92d3bbc2dbb6e76",
+  "status": "ready",
+  "chunk_count": 66,
+  "embedding_id": "lexical-hash-v2-2048",
+  "error": null,
+  "created_at": "2026-11-16T04:03:25.946853+00:00",
+  "needs_reindex": false,
+  "keywords": [
+    "Chapter",
+    "DSAI5205",
+    "Search",
+    "Goal",
+    "solution",
+    "state",
+    "algorithm",
+    "Fitness"
+  ],
+  "outline": [
+    {
+      "title": "第 1 页",
+      "page": 1,
+      "preview": "DSAI5205 Chapter 2 1 DSAI5205 Introduction to Artificial Intelligence Sem 1, 2026/2027 Dep",
+      "chunk_id": "77d6a59a990b42cbbb808e0a61c628d2"
+    },
+    {
+      "title": "第 2 页",
+      "page": 2,
+      "preview": "DSAI5205 Chapter 2 2 What is searching? •Searching is the process of looking for the solut",
+      "chunk_id": "7877773b6c65426c8075211e519a5927"
+    },
+    {
+      "title": "第 3 页",
+      "page": 3,
+      "preview": "DSAI5205 Chapter 2 3 •An agent can find a sequence of actions that achieves its goals when",
+      "chunk_id": "9ff6d0b1db0d43a7bcc914a944e99e30"
+    },
+    {
+      "title": "第 4 页",
+      "page": 4,
+      "preview": "DSAI5205 Chapter 2 4 •Almost every AI problem depends on a search procedure to find the so",
+      "chunk_id": "8d068b8d893e46c2a1649bb66b2b7d78"
+    },
+    {
+      "title": "第 5 页",
+      "page": 5,
+      "preview": "DSAI5205 Chapter 2 5 Graph and Tree Representation •Nodes: the states in a searching proce",
+      "chunk_id": "2c47464b97fe48209503ac3cc06258a7"
+    },
+    {
+      "title": "第 6 页",
+      "page": 6,
+      "preview": "DSAI5205 Chapter 2 6 A simplified road map of part of Romania •Uninformed (Blind) Search •",
+      "chunk_id": "9c8cd1b9623346979d4a4a57a8687d35"
+    }
+  ],
+  "summary": "《DSAI5205_Chapter2_2026.pdf》已建立索引，共 66 个片段。主要内容结构包括：第 1 页、第 2 页、第 3 页、第 4 页。可点关键词：Chapter、DSAI5205、Search、Goal、solution、state。本地演示使用词面检索；问英文资料时优先点关键词，或直接用资料中的术语提问。"
+}

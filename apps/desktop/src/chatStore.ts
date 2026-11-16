@@ -1,17 +1,25 @@
 import { useSyncExternalStore } from 'react';
 import type { ChatMessage, Source } from './knowledge';
-import type { ServerEvent } from './protocol';
+import type { HitlRequiredEvent, HitlSchema, ServerEvent } from './protocol';
+
+export type PendingHitl = {
+  kind: 'quiz_params' | 'plan_params';
+  hitl: HitlSchema;
+  interruptId: string;
+  requestId: string;
+};
 
 export type ConversationState = {
   sessionId: string | null; messages: ChatMessage[]; scope: string; documentIds?: string[];
   pending: { id: string; updatedAt: number } | null;
+  pendingHitl: PendingHitl | null;
   revision: number; origin: string; status?: {state: import('./protocol').PetState;text:string};
   openCitation?: { token: string; source: Source };
 };
 type Port = { postMessage(value: unknown): void; onmessage: ((event: MessageEvent) => unknown) | null; close(): void };
 type Disk = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 const KEY = 'companion-conversation-v2';
-const empty = (): ConversationState => ({ sessionId: null, messages: [], scope: 'auto', pending: null, revision: 0, origin: '' });
+const empty = (): ConversationState => ({ sessionId: null, messages: [], scope: 'auto', pending: null, pendingHitl: null, revision: 0, origin: '' });
 
 export function createConversationStore(port?: Port, disk?: Disk) {
   const origin = crypto.randomUUID();
@@ -47,13 +55,34 @@ export function createConversationStore(port?: Port, disk?: Disk) {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     update,
     setMessages: (value: ChatMessage[] | ((old: ChatMessage[]) => ChatMessage[])) => update(current => ({ messages: typeof value === 'function' ? value(current.messages) : value })),
-    newChat: () => update({ sessionId: null, messages: [], scope: 'auto', documentIds: [], pending: null, status:{state:'idle',text:'今天想学习什么？'},openCitation: undefined }),
-    open: (sessionId: string, messages: ChatMessage[], scope = 'auto', documentIds: string[] = []) => update({ sessionId, messages, scope, documentIds, pending: null, openCitation: undefined }),
+    newChat: () => update({ sessionId: null, messages: [], scope: 'auto', documentIds: [], pending: null, pendingHitl: null, status:{state:'idle',text:'今天想学习什么？'},openCitation: undefined }),
+    open: (sessionId: string, messages: ChatMessage[], scope = 'auto', documentIds: string[] = []) => update({ sessionId, messages, scope, documentIds, pending: null, pendingHitl: null, openCitation: undefined }),
+    cancelHitl: () => update({ pendingHitl: null, pending: null, status: { state: 'idle', text: '今天想学习什么？' } }),
     begin(text: string, scope = state.scope) {
       if (state.pending && Date.now() - state.pending.updatedAt < 90000) return null;
       const id = crypto.randomUUID();
       update(current => ({ scope, pending: { id, updatedAt: Date.now() }, status:{state:'thinking',text:'正在理解你的问题'}, messages: [...current.messages, { id: crypto.randomUUID(), role: 'user', content: text }] }));
       return id;
+    },
+    receiveHitl(event: HitlRequiredEvent) {
+      if (!event.request_id || event.request_id !== state.pending?.id) return false;
+      const interruptId = event.interrupt_id || event.session_id || state.sessionId || event.request_id;
+      update((current) => ({
+        sessionId: event.session_id || current.sessionId,
+        pending: { id: event.request_id, updatedAt: Date.now() },
+        pendingHitl: {
+          kind: event.kind,
+          hitl: event.hitl,
+          interruptId,
+          requestId: event.request_id,
+        },
+        status: { state: event.state, text: event.text },
+        messages: [
+          ...current.messages,
+          { id: crypto.randomUUID(), role: 'assistant', content: event.text, metadata: { mode: 'hitl' } },
+        ],
+      }));
+      return true;
     },
     receive(event: ServerEvent) {
       if (!event.request_id || event.request_id !== state.pending?.id) return false;
@@ -61,7 +90,7 @@ export function createConversationStore(port?: Port, disk?: Disk) {
       if (!['reply', 'error', 'plan_draft'].includes(event.type)) return false;
       const contextIds = event.context?.document_ids;
       update(current => ({
-        sessionId: event.session_id || current.sessionId, pending: null,status:{state:event.state,text:event.text},
+        sessionId: event.session_id || current.sessionId, pending: null, pendingHitl: null,status:{state:event.state,text:event.text},
         documentIds:contextIds||[],
         scope: current.scope === 'chat' ? 'chat' : contextIds?.length === 1 ? contextIds[0] : contextIds && contextIds.length > 1 ? current.scope : current.scope,
         messages: [...current.messages, { id: crypto.randomUUID(), role: 'assistant', content: event.text,

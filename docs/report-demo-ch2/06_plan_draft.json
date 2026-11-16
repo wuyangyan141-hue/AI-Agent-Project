@@ -1,0 +1,63 @@
+{
+  "id": 1,
+  "goal": "Review DSAI5205 Chapter 2 supervised learning",
+  "steps": [
+    {
+      "day": 1,
+      "title": "Review DSAI5205 Chapter 2: Conventional single-point search methods including gradient-driven search and optimization problem formulation",
+      "minutes": 45
+    },
+    {
+      "day": 2,
+      "title": "Review DSAI5205 Chapter 2: Breadth-first and Depth-first search algorithms",
+      "minutes": 45
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "snippet": "DSAI5205 Chapter 2\n44\nConventional methods – single point search\n•Gradient-driven search\n•Optimization problem: Finding a Po where\n )(min)(| iSPooo PfPfSPP i==\nf\nP\n0=Pf nPP\nnn\nP\nfPP\n=\n+\n\n−=1\nis a small positive \nvalue – learning ratePn\nLimitations?",
+      "chunk_id": "5d0ac6f07fe44fa5b45ec95b997a2465",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 39,
+      "section": null,
+      "score": 0.5673,
+      "lexical_score": 0.5673,
+      "semantic_score": 0.2933,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S2",
+      "snippet": "DSAI5205 Chapter 2\n12\nExpand \nnode\nBreadth-first Algorithm",
+      "chunk_id": "9a67afabdc924490a5d6afe029c408b5",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 11,
+      "section": null,
+      "score": 0.2924,
+      "lexical_score": 0.2924,
+      "semantic_score": 0.433,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S3",
+      "snippet": "DSAI5205 Chapter 2\n20\nExpand \nnode\nDepth-first Algorithm",
+      "chunk_id": "7da4211884a0447db7df6e79da9e0250",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 17,
+      "section": null,
+      "score": 0.2924,
+      "lexical_score": 0.2924,
+      "semantic_score": 0.433,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    }
+  ],
+  "document_ids": [
+    "dabf4e6973384ac794f2d14e1bcf9f86"
+  ]
+}

@@ -26,6 +26,12 @@ PROVIDER_PRESETS = [
         'model': 'gpt-4o-mini',
     },
     {
+        'id': 'ollama',
+        'label': 'Ollama（本地）',
+        'base_url': 'http://127.0.0.1:11434/v1',
+        'model': 'qwen2.5:7b',
+    },
+    {
         'id': 'custom',
         'label': '自定义 OpenAI 兼容接口',
         'base_url': '',
