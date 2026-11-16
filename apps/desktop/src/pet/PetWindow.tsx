@@ -9,6 +9,8 @@ import { PetHistoryStack } from './PetHistoryStack';
 import { QuickActions } from './QuickActions';
 import { useBoneCursor } from './useBoneCursor';
 import { usePetSocket } from './usePetSocket';
+import { HitlPanel } from '../HitlPanel';
+import { useConversation, conversation } from '../chatStore';
 import { usePetWindowLayout } from './usePetWindow';
 import { DEFAULT_BUBBLE_COPY } from './types';
 import './pet-window.css';
@@ -28,8 +30,10 @@ export function PetWindow() {
     bones, feedCost, feeding, feedPet,
     confirmingTask, activeCheckIn, offerReview,
     selectCheckInTask, cancelCheckIn, startCheckIn, finishCheckInEarly,
-    choosePlanOption, dismissPlanOptions, reselectPlanOptions, startReviewOffer, skipReviewOffer,
+    choosePlanOption, dismissPlanOptions, reselectPlanOptions, startReviewOffer, skipReviewOffer, submitGraphResume,
   } = usePetSocket();
+  const shared = useConversation();
+  const pendingHitl = shared.pendingHitl;
   const rootRef = usePetWindowLayout(historyOpen);
   const { layerRef, boneCursorUrl } = useBoneCursor(true);
   const handleDrag = useRef<{
@@ -251,6 +255,22 @@ export function PetWindow() {
       <div className="pet-stack">
         {bubbleOpen && historyOpen && (
           <PetHistoryStack messages={messages} currentText={singleBubbleText} />
+        )}
+        {bubbleOpen && pendingHitl && (
+          <div className="pet-hitl-wrap" data-interactive>
+            <HitlPanel
+              schema={pendingHitl.hitl}
+              kind={pendingHitl.kind}
+              interruptId={pendingHitl.interruptId}
+              requestId={pendingHitl.requestId}
+              sessionId={shared.sessionId}
+              disabled={sending || connection !== 'connected'}
+              onSubmit={(payload) => {
+                submitGraphResume(payload);
+              }}
+              onCancel={() => conversation.cancelHitl()}
+            />
+          </div>
         )}
         {bubbleOpen && (
           <PetBubble

@@ -1,0 +1,400 @@
+/* Minimal study-desk shell — overrides warm “AI landing” defaults */
+:root {
+  --bg: #f4f4f5;
+  --surface: #ffffff;
+  --surface-muted: #fafafa;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-secondary: #71717a;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: #eff6ff;
+  --sidebar-w: 168px;
+  --radius: 6px;
+  --ink: var(--text);
+  --muted: var(--text-secondary);
+  --line: var(--border);
+  --cream: var(--surface);
+  --green: var(--accent);
+  --green-dark: var(--accent-hover);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  border-radius: var(--radius);
+  font-size: 13px;
+  padding: 8px 14px;
+  background: var(--accent);
+}
+
+button.quiet {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+button.quiet:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+input, textarea, select {
+  border-radius: var(--radius);
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.companion-panel.companion-shell {
+  max-width: none;
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 10px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  min-height: 100dvh;
+}
+
+.app-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 14px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-sidebar-brand .header-dog {
+  width: 36px;
+  height: 44px;
+}
+
+.app-sidebar-brand strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.app-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.app-sidebar nav button {
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  border-radius: var(--radius);
+  border: 0;
+}
+
+.app-sidebar nav button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.app-sidebar nav button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.app-sidebar .tab-count {
+  background: var(--border);
+  color: var(--text-secondary);
+  font-size: 10px;
+  margin-left: auto;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100dvh;
+}
+
+.app-main .app-header {
+  min-height: auto;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.app-main .app-header .header-dog {
+  display: none;
+}
+
+.app-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.app-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
+.connection-dot.online {
+  background: #22c55e;
+}
+
+.app-main .header-actions button {
+  font-size: 12px;
+  padding: 7px 12px;
+}
+
+.app-main .panel-body {
+  padding: 20px 24px 16px;
+  height: calc(100dvh - 96px);
+  background: var(--bg);
+}
+
+.app-main .panel-body > section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: none;
+}
+
+.app-footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+  height: 36px;
+  padding: 0 24px;
+}
+
+.overline {
+  display: none;
+}
+
+.page-head {
+  margin: 0 0 20px;
+}
+
+.page-head h2 {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 6px;
+  letter-spacing: 0;
+}
+
+.page-head .muted {
+  margin: 0;
+  font-size: 13px;
+}
+
+.knowledge-heading {
+  min-height: 0;
+  margin-bottom: 16px;
+}
+
+.library-dog,
+.greeting-dog {
+  display: none;
+}
+
+.knowledge-heading h2,
+.chat-greeting h2 {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drop-zone {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-height: 120px;
+  gap: 8px;
+}
+
+.drop-zone:hover,
+.drop-zone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.upload-glyph {
+  display: none;
+}
+
+.drop-zone strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.document-card {
+  border-radius: var(--radius);
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.chat-greeting {
+  min-height: 200px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  text-align: left;
+  padding: 24px 0;
+}
+
+.chat-greeting p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-empty-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.chat-message.user {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.chat-speaker {
+  color: var(--text-secondary);
+}
+
+.chat-content {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.answer-mode {
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.chat-composer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.composer-bottom button {
+  background: var(--accent);
+}
+
+.next-step-card,
+.hitl-panel,
+.draft {
+  border-radius: var(--radius);
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.chat-quick-reviews button,
+.source-pills button {
+  border-radius: var(--radius);
+}
+
+.soft-card {
+  border-radius: var(--radius);
+  border-color: var(--border);
+}
+
+.panel-subheading h3,
+.soft-card h3 {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.source-dialog {
+  border-radius: var(--radius);
+}
+
+.source-dialog h3 {
+  font-family: inherit;
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .companion-panel.companion-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .app-sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-height: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .app-sidebar-brand {
+    border-bottom: 0;
+    margin: 0;
+    padding: 4px 8px;
+  }
+
+  .app-sidebar nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .app-sidebar nav button {
+    width: auto;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .app-main .panel-body {
+    height: calc(100dvh - 140px);
+    padding: 16px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .companion-panel.companion-shell {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}
