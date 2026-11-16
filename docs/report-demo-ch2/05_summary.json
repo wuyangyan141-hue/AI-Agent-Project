@@ -1,0 +1,221 @@
+{
+  "sources": [
+    {
+      "id": "S2",
+      "chunk_id": "9c8cd1b9623346979d4a4a57a8687d35",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 6,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 6 A simplified road map of part of Romania •Uninformed (Blind) Search •Breadth-first Search •Depth-fi",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 6 A simplified road map of part of Romania •Uninformed (Blind) Search •Breadth-first Search •Depth-first Search •Informed (Heuristic) Search "
+    },
+    {
+      "id": "S5",
+      "chunk_id": "a6e42e6f46d648cb87e9b2e7d4bbd26b",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 21,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 26 •They both find a solution if one exists (and if the state isn’t too big). •Depth-first search: •I",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 26 •They both find a solution if one exists (and if the state isn’t too big). •Depth-first search: •If the search space contains very deep br"
+    },
+    {
+      "id": "S6",
+      "chunk_id": "e234b483e8a542cba69a80f15d3584aa",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 26,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 31 Best-first search •Try to expand the node that is closest to the goal, on the grounds that this is",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 31 Best-first search •Try to expand the node that is closest to the goal, on the grounds that this is likely to lead to a solution quickly. •"
+    },
+    {
+      "id": "S10",
+      "chunk_id": "d4c3747e4b1b45ddb103e21ee6932289",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 45,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 51 Genetic Algorithms •A genetic algorithm is a search-based algorithm based on natural selection, wh",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 51 Genetic Algorithms •A genetic algorithm is a search-based algorithm based on natural selection, which can be used for solving AI optimizat"
+    },
+    {
+      "id": "S3",
+      "chunk_id": "9a67afabdc924490a5d6afe029c408b5",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 11,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 12 Expand node Breadth-first Algorithm",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 12 Expand node Breadth-first Algorithm"
+    },
+    {
+      "id": "S4",
+      "chunk_id": "59fece5a4fc149f8875ee72f20614828",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 16,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 19 •Expand the tree as deep as possible, returning to upper levels when needed. Depth-first Search •S",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 19 •Expand the tree as deep as possible, returning to upper levels when needed. Depth-first Search •Select a child left to right. •Repeatedly"
+    },
+    {
+      "id": "S7",
+      "chunk_id": "8e43f00243094d21bde9a53af5bf3ba1",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 31,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 36 Arad 366 Bucharest 0 Craiova 160 Drobeta 242 Eforie 161 Fagaras 176 Giurgiu 77 Hirsova 151 Iasi 22",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 36 Arad 366 Bucharest 0 Craiova 160 Drobeta 242 Eforie 161 Fagaras 176 Giurgiu 77 Hirsova 151 Iasi 226 Lugoj 244 Mehadia 241 Neamt 234 Oradea"
+    },
+    {
+      "id": "S8",
+      "chunk_id": "a210c29f4b324a309005c6d22d06077d",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 35,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 40 x y z = f (x, y) What are the values of x and y such that z is equal to the value at the peak? max",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 40 x y z = f (x, y) What are the values of x and y such that z is equal to the value at the peak? maximization? minimization? •What is an opt"
+    },
+    {
+      "id": "S9",
+      "chunk_id": "77873631f8604e98aef27e0b63f85bea",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 40,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 45 •Limitations 1. Function must be continuous/differentiable 2. Local optima 3. Performance depends ",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 45 •Limitations 1. Function must be continuous/differentiable 2. Local optima 3. Performance depends on the starting point"
+    },
+    {
+      "id": "S11",
+      "chunk_id": "7e9df980af8e436ea08f4e38dee1ac31",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 49,
+      "section": null,
+      "snippet": "chromosomes is exchanged at the dotted position randomly specified. P2: 4 0 0 3 0 1 6 1 P2’: 4 0 0 3 0 8 0 1 P3’: 0 1 6 ",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "chromosomes is exchanged at the dotted position randomly specified. P2: 4 0 0 3 0 1 6 1 P2’: 4 0 0 3 0 8 0 1 P3’: 0 1 6 4 1 1 6 1 No fitness calculations needed"
+    },
+    {
+      "id": "S12",
+      "chunk_id": "a260e1cb8b0745299cb42cb9e42c0ce4",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 54,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 60 ( )1632.5 20.5 2.5 13.9609255x=+ − = = 13.9609 (real number) Genotype: Phenotype:Could be a real n",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 60 ( )1632.5 20.5 2.5 13.9609255x=+ − = = 13.9609 (real number) Genotype: Phenotype:Could be a real number, e.g., a number between the range "
+    },
+    {
+      "id": "S13",
+      "chunk_id": "c534a3c741d64c6ca591f10db567b2c0",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 59,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 65 Example: Recombination for order-based representation 81 2 7, 3, 4, 6, 5 4, 3, 6, 7, 5 order 7 83 ",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 65 Example: Recombination for order-based representation 81 2 7, 3, 4, 6, 5 4, 3, 6, 7, 5 order 7 83 41 2 65 Parent 1 78 16 5234 Parent 2 7 8"
+    },
+    {
+      "id": "S14",
+      "chunk_id": "5f2bd793f9c9432e95faaa4bd5904d60",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 64,
+      "section": null,
+      "snippet": "DSAI5205 Chapter 2 71 Advantages of genetic algorithms •It has excellent parallel capabilities. •It can optimize various",
+      "score": 1.0,
+      "evidence_kind": "overview",
+      "digest": "DSAI5205 Chapter 2 71 Advantages of genetic algorithms •It has excellent parallel capabilities. •It can optimize various problems such as discrete functions, mu"
+    }
+  ],
+  "mode": "summary",
+  "warning": null,
+  "preferences_used": {},
+  "memories_used": [],
+  "answer": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求解目标（如最优解保证、计算效率）。 [S2][S5][S6][S10]\n\n要点：\n· 无信息搜索包括广度优先搜索（BFS）和深度优先搜索（DFS），二者均能保证在解存在且状态空间不过大的前提下找到解；BFS按层扩展节点，DFS则尽可能向深处探索并在必要时回溯。 [S2][S3][S4][S5]\n· 有信息搜索以最佳优先搜索为代表，利用启发式函数估计节点到目标的距离，优先扩展最接近目标的节点，从而提升搜索效率。 [S6][S7]\n· 连续优化问题常采用基于梯度的方法，但其应用受限于目标函数必须连续可微，且易陷入局部最优，结果高度依赖初始点选取。 [S8][S9]\n· 遗传算法是一种基于种群的启发式优化方法，通过选择、交叉（如顺序编码下的部分映射交叉）和变异操作模拟自然进化，适用于离散、非连续、多峰等难以用传统梯度法求解的问题，并具备天然并行性。 [S10][S11][S12][S13][S14]\n\n限制与注意：梯度类方法要求函数连续可微，且无法保证全局最优；盲目搜索在状态空间极大时面临内存或时间爆炸；遗传算法虽鲁棒性强，但不保证收敛到全局最优，且参数设置（如种群大小、交叉率）影响性能。",
+  "quotes": [
+    {
+      "source_id": "S2",
+      "quote": "DSAI5205 Chapter 2 6 A simplified road map of part of Romania •Uninformed (Blind) Search •Breadth-first Search •Depth-fi",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S5",
+      "quote": "DSAI5205 Chapter 2 26 •They both find a solution if one exists (and if the state isn’t too big). •Depth-first search: •I",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S6",
+      "quote": "DSAI5205 Chapter 2 31 Best-first search •Try to expand the node that is closest to the goal, on the grounds that this is",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S10",
+      "quote": "DSAI5205 Chapter 2 51 Genetic Algorithms •A genetic algorithm is a search-based algorithm based on natural selection, wh",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S3",
+      "quote": "DSAI5205 Chapter 2 12 Expand node Breadth-first Algorithm",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S4",
+      "quote": "DSAI5205 Chapter 2 19 •Expand the tree as deep as possible, returning to upper levels when needed. Depth-first Search •S",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S7",
+      "quote": "DSAI5205 Chapter 2 36 Arad 366 Bucharest 0 Craiova 160 Drobeta 242 Eforie 161 Fagaras 176 Giurgiu 77 Hirsova 151 Iasi 22",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    },
+    {
+      "source_id": "S8",
+      "quote": "DSAI5205 Chapter 2 40 x y z = f (x, y) What are the values of x and y such that z is equal to the value at the peak? max",
+      "claim": "本章系统介绍了人工智能中两类核心搜索与优化方法：无信息（盲目）搜索、有信息（启发式）搜索，以及基于自然选择原理的遗传算法。内容涵盖典型算法的策略、适用场景、性能特征及内在局限，强调算法选择需结合问题结构（如状态空间规模、连续性、可微性）与求"
+    }
+  ],
+  "coverage": {
+    "processed_chunks": 66,
+    "total_chunks": 66,
+    "document_ids": [
+      "dabf4e6973384ac794f2d14e1bcf9f86"
+    ]
+  },
+  "session_id": "392e3051432940858a850bc3161234e7",
+  "context": {
+    "document_ids": [
+      "dabf4e6973384ac794f2d14e1bcf9f86"
+    ],
+    "topic": "Summarise the main topics in this chapter."
+  }
+}

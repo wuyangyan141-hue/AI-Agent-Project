@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { ChatLine } from './types';
 import { conversation } from '../chatStore';
+import { scrollToBottom } from '../scrollToBottom';
 
 /** Bubble-thread transcript above the pet (keeps speech-bubble look). */
 export function PetChatLog({
@@ -16,7 +17,7 @@ export function PetChatLog({
   onOpenFullChat: () => void;
   onAnswer?: (text: string) => void;
 }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const lines = messages.slice(-12);
   const live = (liveText || '').trim();
   const showLive = Boolean(live) && (!lines.length || lines[lines.length - 1]?.content !== live);
@@ -32,12 +33,12 @@ export function PetChatLog({
   );
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
-  }, [lines, showLive, liveText, canPick]);
+    scrollToBottom(scrollRef.current, { smooth: true, force: true });
+  }, [lines.length, showLive, liveText, canPick, sending]);
 
   return (
     <div className="pet-bubble-thread" data-interactive aria-label="桌宠对话气泡">
-      <div className="pet-bubble-thread-scroll">
+      <div ref={scrollRef} className="pet-bubble-thread-scroll">
         {!lines.length && !showLive && (
           <div className="pet-bubble pet-bubble-mini">
             <p className="pet-bubble-text">问资料问题，或点「出题」开始答题～</p>
@@ -98,7 +99,6 @@ export function PetChatLog({
             <span className="pet-bubble-arrow" aria-hidden="true" />
           </div>
         )}
-        <div ref={endRef} />
       </div>
       <button type="button" className="pet-bubble-more" onClick={onOpenFullChat}>
         打开完整聊天窗口

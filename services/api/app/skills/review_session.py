@@ -720,8 +720,22 @@ def repair_vague_waiting_reviews() -> None:
         db.commit()
 
 
-def daily_quiz(topics: list[str] | None = None, limit: int = 3, document_ids=None) -> dict:
+_DIFFICULTY_ROTATION = {
+    'easy': ('true_false', 'multiple_choice', 'true_false', 'multiple_choice', 'true_false'),
+    'standard': QUESTION_TYPES,
+    'hard': ('short_answer', 'compare', 'short_answer', 'fill_blank', 'compare'),
+}
+
+
+def daily_quiz(
+    topics: list[str] | None = None,
+    limit: int = 3,
+    document_ids=None,
+    *,
+    difficulty: str = 'standard',
+) -> dict:
     limit = max(1, min(limit, 5))
+    rotation = _DIFFICULTY_ROTATION.get(difficulty, QUESTION_TYPES)
     material = _knowledge_topics(limit)
     if topics:
         chosen = [resolve_topic(t) for t in topics if t and t.strip()][:limit]
@@ -733,14 +747,15 @@ def daily_quiz(topics: list[str] | None = None, limit: int = 3, document_ids=Non
         chosen = ['今日重点']
     items = []
     for index, topic in enumerate(chosen):
-        preferred = QUESTION_TYPES[index % len(QUESTION_TYPES)]
+        preferred = rotation[index % len(rotation)]
         started = begin_review(topic, document_ids=document_ids, preferred_type=preferred)
         items.append(started)
     return {
         'kind': 'daily_quiz',
         'count': len(items),
         'items': items,
-        'instruction': '逐题作答；题型会在单选/简答/判断/填空/对比间轮换，有知识库时只按资料考点给分。',
+        'difficulty': difficulty,
+        'instruction': '逐题作答；题型按难度与资料考点生成，有知识库时只按资料给分。',
     }
 
 

@@ -94,6 +94,18 @@ class LlmSettingsInput(BaseModel):
     llm_api_key: str | None = Field(default=None, max_length=200)
     llm_base_url: str | None = Field(default=None, max_length=300)
 
+class LearnerProfileInput(BaseModel):
+    answer_style: str | None = Field(default=None, pattern='^(concise|detailed|socratic)$')
+    tone: str | None = Field(default=None, max_length=40)
+    language: str | None = Field(default=None, max_length=16)
+    background: str | None = Field(default=None, max_length=600)
+    notes: str | None = Field(default=None, max_length=300)
+
+class GraphResumeInput(BaseModel):
+    thread_id: str = Field(min_length=1, max_length=120)
+    kind: str = Field(pattern='^(quiz_params|plan_params)$')
+    payload: dict = Field(default_factory=dict)
+
 @app.get('/health')
 def health() -> dict:
     cfg = public_config()
@@ -117,6 +129,23 @@ def update_llm_settings(item: LlmSettingsInput) -> dict:
         return apply_runtime(agent)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+@app.get('/learner/profile')
+def get_learner_profile() -> dict:
+    from .learner_profile import get_profile
+    return get_profile()
+
+@app.put('/learner/profile')
+def update_learner_profile(item: LearnerProfileInput) -> dict:
+    from .learner_profile import save_profile
+    return save_profile(item.model_dump(exclude_unset=True))
+
+@app.post('/graph/resume')
+def graph_resume(item: GraphResumeInput) -> dict:
+    from .graph.runner import resume_plan_flow, resume_quiz_flow
+    if item.kind == 'quiz_params':
+        return resume_quiz_flow(item.thread_id, item.payload)
+    return resume_plan_flow(item.thread_id, item.payload)
 
 @app.get('/tasks')
 def tasks() -> list[dict]:
@@ -377,17 +406,87 @@ async def chat(websocket: WebSocket):
             request_id=request_id if isinstance(request_id,str) and re.fullmatch(r'[A-Za-z0-9_-]{1,80}',request_id) else uid()
             async def emit(state,text):
                 await websocket.send_json({'type':'status','text':text,'state':state,'request_id':request_id})
-            if not isinstance(event,dict) or event.get('type') not in {'message','plan_request'}:
+            if not isinstance(event,dict) or event.get('type') not in {'message','plan_request','graph_resume'}:
                 await websocket.send_json({'type':'error','text':'无效消息类型。','state':'error','request_id':request_id});continue
+            if event['type']=='graph_resume':
+                try:
+                    resume_item=GraphResumeInput.model_validate({
+                        'thread_id':str(event.get('thread_id') or event.get('session_id') or active_session_id or ''),
+                        'kind':event.get('kind'),
+                        'payload':event.get('payload') if isinstance(event.get('payload'),dict) else {},
+                    })
+                except ValueError:
+                    await websocket.send_json({'type':'error','text':'人机确认参数无效。','state':'error','request_id':request_id});continue
+            if event['type']=='graph_resume' and (not resume_item.thread_id.strip() or not re.fullmatch(r'[A-Za-z0-9_-]{1,120}',resume_item.thread_id)):
+                await websocket.send_json({'type':'error','text':'对话线程无效，请重试。','state':'error','request_id':request_id});continue
             if event['type']=='message' and (not isinstance(event.get('text'),str) or not event['text'].strip() or len(event['text'])>4000):
                 await websocket.send_json({'type':'error','text':'请发送1–4000字的消息。','state':'error','request_id':request_id});continue
             if event['type']=='plan_request':
                 try: PlanInput.model_validate(event.get('payload'))
                 except ValueError:
                     await websocket.send_json({'type':'error','text':'请提供目标、1–14天和每天15–240分钟。','state':'error','request_id':request_id});continue
-            await emit('thinking','正在理解你的问题')
+            await emit('thinking','正在理解你的问题' if event['type']!='graph_resume' else '正在继续…')
             try:
                 knowledge=get_knowledge()
+                if event['type']=='graph_resume':
+                    from .graph.runner import resume_plan_flow, resume_quiz_flow
+                    requested=event.get('session_id',active_session_id)
+                    if requested is not None and (not isinstance(requested,str) or not re.fullmatch(r'[a-f0-9]{32}',requested)):
+                        raise ValueError('对话标识无效，请开启新对话。')
+                    session_id=requested or resume_item.thread_id
+                    active_session_id=session_id
+                    document_ids=event.get('document_ids',UNSET)
+                    ids=knowledge.resolve_scope('local-user',session_id,document_ids)
+                    saved=None;out_type='reply';extra={}
+                    if resume_item.kind=='quiz_params':
+                        graph_out=await run_in_threadpool(resume_quiz_flow,resume_item.thread_id,resume_item.payload)
+                        if graph_out.get('status')=='hitl':
+                            await websocket.send_json({
+                                'type':'hitl_required','state':'thinking',
+                                'text':'请确认小测题量与难度后点击「开始出题」。',
+                                'request_id':request_id,'session_id':session_id,
+                                'hitl':graph_out.get('hitl'),'interrupt_id':graph_out.get('interrupt_id'),
+                                'kind':graph_out.get('kind'),
+                            });continue
+                        created=graph_out.get('created') or []
+                        first=graph_out.get('first') or (created[0] if created else {})
+                        if not first:
+                            saved=knowledge.record_exchange('local-user','','小测生成失败，请稍后重试。',session_id,{'mode':'error'})
+                        else:
+                            saved=knowledge.record_exchange('local-user','',first['question'],session_id,{'review':first,'quiz':created,'sources':first.get('sources',[]),'mode':'review_question'})
+                    else:
+                        graph_out=await run_in_threadpool(resume_plan_flow,resume_item.thread_id,resume_item.payload)
+                        if graph_out.get('status')=='hitl':
+                            await websocket.send_json({
+                                'type':'hitl_required','state':'thinking',
+                                'text':'请确认学习目标与日程后点击「生成计划」。',
+                                'request_id':request_id,'session_id':session_id,
+                                'hitl':graph_out.get('hitl'),'interrupt_id':graph_out.get('interrupt_id'),
+                                'kind':graph_out.get('kind'),
+                            });continue
+                        if graph_out.get('status')=='error':
+                            saved=knowledge.record_exchange('local-user','',str(graph_out.get('error') or '计划生成失败'),session_id,{'mode':'error'})
+                        elif graph_out.get('intent'):
+                            intent=StudyIntent.model_validate(graph_out['intent'])
+                            action=intent.action if intent.action in {'plan','replan'} else 'plan'
+                            await emit('tool','正在根据资料和时间预算制定计划草稿')
+                            materials=await with_progress(run_in_threadpool(knowledge.learning_context,'local-user',intent.goal,ids),emit,'正在整理资料中的学习主题') if action=='plan' else {'sources':[],'document_ids':ids}
+                            steps=[]
+                            if action=='plan':
+                                from .skills.study_plan import grounded_goal
+                                plan_goal=grounded_goal(intent.goal,materials)
+                                intent=intent.model_copy(update={'goal':plan_goal})
+                                steps=[step.__dict__ for step in await asyncio.wait_for(agent.generate_plan(plan_goal,intent.days,intent.minutes_per_day,material_context=materials),timeout=60)]
+                            with store.connect() as db:
+                                draft=store.save_plan_draft(db,{'goal':intent.goal,'steps':steps,'sources':materials['sources'],'document_ids':materials['document_ids']}) if action=='plan' else store.save_replan_draft(db,propose_replan(store.list_tasks(db),intent.days,intent.minutes_per_day))
+                            if action=='plan' and intent.goal.strip():
+                                knowledge.set_context('local-user',session_id,materials.get('document_ids') if materials.get('document_ids') is not None else ids,topic=intent.goal[:200])
+                            saved=knowledge.record_exchange('local-user','','计划草稿已生成，请检查后确认保存。',session_id,{'draft':draft,'kind':action,'sources':materials['sources']})
+                            out_type='plan_draft'
+                    coach=saved.get('next_step') or next_step(session_id=session_id)
+                    await websocket.send_json({**saved,'type':out_type,'text':saved['answer'],'state':'success','answer_mode':saved['mode'],
+                        'request_id':request_id,'next_step':coach,'mode':agent.mode})
+                    continue
                 requested=event.get('session_id',active_session_id)
                 if requested is not None and (not isinstance(requested,str) or not re.fullmatch(r'[a-f0-9]{32}',requested)):
                     raise ValueError('对话标识无效，请开启新对话。')
@@ -479,6 +578,21 @@ async def chat(websocket: WebSocket):
                         else:
                             saved=knowledge.record_exchange('local-user',text,'想学习什么内容？可以先上传资料，或直接告诉我学习目标。',session_id,{'pending_plan':intent.model_dump()})
                     if saved is None and intent.action in {'plan','replan'} and (intent.action!='plan' or intent.goal.strip()):
+                        from .graph.runner import run_plan_flow
+                        graph_out=await run_in_threadpool(run_plan_flow,session_id=session_id,user_text=text,intent=intent,document_ids=ids)
+                        if graph_out.get('status')=='hitl':
+                            await websocket.send_json({
+                                'type':'hitl_required','state':'thinking',
+                                'text':'请确认学习目标与日程后点击「生成计划」。',
+                                'request_id':request_id,'session_id':session_id,
+                                'hitl':graph_out.get('hitl'),'interrupt_id':graph_out.get('interrupt_id'),
+                                'kind':graph_out.get('kind'),
+                            });continue
+                        if graph_out.get('status')=='done' and graph_out.get('intent'):
+                            intent=StudyIntent.model_validate(graph_out['intent'])
+                        elif graph_out.get('status')=='error':
+                            saved=knowledge.record_exchange('local-user',text,str(graph_out.get('error') or '计划生成失败'),session_id,{'mode':'error'})
+                    if saved is None and intent.action in {'plan','replan'} and (intent.action!='plan' or intent.goal.strip()):
                         if event['type']!='plan_request': await emit('tool','正在根据资料和时间预算制定计划草稿')
                         materials=await with_progress(run_in_threadpool(knowledge.learning_context,'local-user',intent.goal,ids),emit,'正在整理资料中的学习主题') if intent.action=='plan' else {'sources':[],'document_ids':ids}
                         if intent.action=='plan':
@@ -530,7 +644,6 @@ async def chat(websocket: WebSocket):
                 elif decision.kind=='command' and intent.action in {'review','quiz','weak'}:
                     await emit('tool','正在根据资料准备复习题（含单选/判断等）')
                     preferred='multiple_choice' if intent.action=='quiz' else ('short_answer' if intent.action=='review' else 'true_false')
-                    # Retire any unanswered card so one-click「薄弱点/出题」lands on the new question.
                     with store.connect() as db:
                         db.execute(
                             "UPDATE review_sessions SET status='skipped', feedback='用户开始新题，自动跳过未答题' "
@@ -538,27 +651,59 @@ async def chat(websocket: WebSocket):
                             (session_id,),
                         )
                         db.commit()
-                    def prepare():
-                        if intent.action=='quiz': return daily_quiz(document_ids=ids)['items']
-                        topic=intent.topic or '今日重点'
-                        if intent.action=='weak':
-                            with store.connect() as db:
-                                rows=[dict(row) for row in db.execute('SELECT topic,status FROM review_sessions WHERE session_id=? ORDER BY id DESC LIMIT 20',(session_id,))]
-                            topic=weak_point_review(rows)['topic']
-                            try:
-                                from .skills.preferences_loop import weak_topic_hint
-                                hint=weak_topic_hint('local-user')
-                                if hint and (not topic or topic in {'今日重点','重点'}):
-                                    topic=hint[:80]
-                                elif hint and hint not in topic:
-                                    topic=f'{hint}'[:80]
-                            except Exception:
-                                pass
-                        return [begin_review(topic,document_ids=ids,preferred_type=preferred)]
-                    reviews=await with_progress(run_in_threadpool(prepare),emit,'正在生成带资料依据的复习题')
-                    with store.connect() as db: created=[save_review(db,item,session_id) for item in reviews]
-                    first=public_review(created[0])
-                    saved=knowledge.record_exchange('local-user',text,first['question'],session_id,{'review':first,'quiz':[public_review(q) for q in created],'sources':first.get('sources',[]),'mode':'review_question'})
+                    if intent.action == 'quiz':
+                        from .graph.runner import run_quiz_flow
+                        graph_out = await run_in_threadpool(
+                            run_quiz_flow, session_id=session_id, user_text=text, document_ids=ids
+                        )
+                        if graph_out.get('status') == 'hitl':
+                            await websocket.send_json({
+                                'type': 'hitl_required',
+                                'state': 'thinking',
+                                'text': '请确认小测题量与难度后点击「开始出题」。',
+                                'request_id': request_id,
+                                'session_id': session_id,
+                                'hitl': graph_out.get('hitl'),
+                                'interrupt_id': graph_out.get('interrupt_id'),
+                                'kind': graph_out.get('kind'),
+                            })
+                            continue
+                        created = graph_out.get('created') or []
+                        first = graph_out.get('first') or (created[0] if created else {})
+                        if not first:
+                            saved = knowledge.record_exchange('local-user', text, '小测生成失败，请稍后重试。', session_id, {'mode': 'error'})
+                        else:
+                            saved = knowledge.record_exchange(
+                                'local-user', text, first['question'], session_id,
+                                {'review': first, 'quiz': created, 'sources': first.get('sources', []), 'mode': 'review_question'},
+                            )
+                    else:
+                        def prepare():
+                            topic = intent.topic or '今日重点'
+                            if intent.action == 'weak':
+                                with store.connect() as db:
+                                    rows = [dict(row) for row in db.execute(
+                                        'SELECT topic,status FROM review_sessions WHERE session_id=? ORDER BY id DESC LIMIT 20', (session_id,)
+                                    )]
+                                topic = weak_point_review(rows)['topic']
+                                try:
+                                    from .skills.preferences_loop import weak_topic_hint
+                                    hint = weak_topic_hint('local-user')
+                                    if hint and (not topic or topic in {'今日重点', '重点'}):
+                                        topic = hint[:80]
+                                    elif hint and hint not in topic:
+                                        topic = f'{hint}'[:80]
+                                except Exception:
+                                    pass
+                            return [begin_review(topic, document_ids=ids, preferred_type=preferred)]
+                        reviews = await with_progress(run_in_threadpool(prepare), emit, '正在生成带资料依据的复习题')
+                        with store.connect() as db:
+                            created = [save_review(db, item, session_id) for item in reviews]
+                        first = public_review(created[0])
+                        saved = knowledge.record_exchange(
+                            'local-user', text, first['question'], session_id,
+                            {'review': first, 'quiz': [public_review(q) for q in created], 'sources': first.get('sources', []), 'mode': 'review_question'},
+                        )
                 elif decision.kind=='command' and intent.action=='today':
                     await emit('thinking','正在整理今日计划')
                     agenda=today_plan(session_id)

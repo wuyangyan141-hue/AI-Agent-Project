@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { messageEvent, parseServerEvent } from '../protocol';
+import { messageEvent, parseHitlRequired, parseServerEvent } from '../protocol';
 import { mapServerEventToPet } from './stateMapping';
 import { conversation, useConversation, scopeFields } from '../chatStore';
 import { request, type PlanOption, type TodayPlanTask } from '../knowledge';
@@ -446,6 +446,17 @@ export function usePetSocket() {
 
     const handleMessage = (raw: string) => {
       try {
+        const envelope = JSON.parse(raw) as { type?: string };
+        if (envelope.type === 'hitl_required') {
+          const hitl = parseHitlRequired(raw);
+          if (conversation.receiveHitl(hitl)) {
+            setAnimation('thinking');
+            const short = hitl.text.length <= 28 ? hitl.text : hitl.text.slice(0, 24) + '…';
+            setBubbleText(short);
+            publishLocal('thinking', short);
+          }
+          return;
+        }
         const data = parseServerEvent(raw);
         if (data.type === 'welcome') {
           // Prefer a short title; never paste a full review prompt into the bubble.

@@ -1,0 +1,5 @@
+Figure 6 · Material-grounded review item
+
+Question type: short_answer
+
+根据《DSAI5205_Chapter2_2026.pdf》中与「supervised learning from lecture notes」相关的内容（原文线索：DSAI5205 Chapter 2 44 Conventional methods – sin…），用资料里的术语说明它是什么、在什么条件下成立。请覆盖：supervised learning from lecture notes、Chapter、DSAI5205。

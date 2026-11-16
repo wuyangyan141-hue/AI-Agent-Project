@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { messageEvent, parseServerEvent } from '../src/protocol';
+import { messageEvent, parseHitlRequired, parseServerEvent } from '../src/protocol';
 describe('WebSocket protocol', () => {
   it('encodes a message', () => expect(JSON.parse(messageEvent('你好'))).toEqual({ type: 'message', text: '你好' }));
   it('accepts a reply and pet state', () => expect(parseServerEvent('{"type":"reply","text":"ok","state":"success"}').state).toBe('success'));
   it('rejects malformed events', () => expect(() => parseServerEvent('{"type":"reply","text":3,"state":"success"}')).toThrow());
+  it('parses hitl_required', () => {
+    const hitl = parseHitlRequired(JSON.stringify({
+      type: 'hitl_required',
+      text: '确认参数',
+      state: 'thinking',
+      request_id: 'req-1',
+      kind: 'quiz_params',
+      hitl: { kind: 'quiz_params', title: '小测', fields: [{ key: 'limit', label: '数量', type: 'number' }] },
+    }));
+    expect(hitl.kind).toBe('quiz_params');
+    expect(hitl.hitl.title).toBe('小测');
+  });
   it('accepts a replan draft with schedule', () => {
     const event = parseServerEvent(JSON.stringify({ type: 'plan_draft', kind: 'replan', text: '草稿', state: 'success', draft: { id: 2, schedule: [] } }));
     expect(event.kind).toBe('replan');

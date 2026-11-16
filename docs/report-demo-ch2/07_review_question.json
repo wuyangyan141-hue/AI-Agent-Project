@@ -1,0 +1,70 @@
+{
+  "id": 5,
+  "topic": "supervised learning from lecture notes",
+  "question": "【简答】根据《DSAI5205_Chapter2_2026.pdf》中与「supervised learning from lecture notes」相关的内容（原文线索：DSAI5205 Chapter 2 44 Conventional methods – sin…），用资料里的术语说明它是什么、在什么条件下成立。请覆盖：supervised learning from lecture notes、Chapter、DSAI5205。",
+  "stem": "根据《DSAI5205_Chapter2_2026.pdf》中与「supervised learning from lecture notes」相关的内容（原文线索：DSAI5205 Chapter 2 44 Conventional methods – sin…），用资料里的术语说明它是什么、在什么条件下成立。请覆盖：supervised learning from lecture notes、Chapter、DSAI5205。",
+  "question_type": "short_answer",
+  "options": [],
+  "sources": [
+    {
+      "id": "S1",
+      "snippet": "DSAI5205 Chapter 2\n44\nConventional methods – single point search\n•Gradient-driven search\n•Optimization problem: Finding a Po where\n )(min)(| iSPooo PfPfSPP i==\nf\nP\n0=Pf nPP\nnn\nP\nfPP\n=\n+\n\n−=1\nis a small positive \nvalue – learning ratePn\nLimitations?",
+      "chunk_id": "5d0ac6f07fe44fa5b45ec95b997a2465",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 39,
+      "section": null,
+      "score": 0.1889,
+      "lexical_score": 0.1889,
+      "semantic_score": 0.0803,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S2",
+      "snippet": "DSAI5205 Chapter 2\n64\nUniform Crossover\na db fc e gh\nFD GE HCBA\nRecombination for order-based representation (example):\n•Choose an arbitrary part from the first parent and copy this to the first child\n•Copy the remaining genes (from the second parent) that are not in the copied \npart to the first child:\n•Starting right from the cut point of the copied part\n•Using the order of genes from the second parent\n•Wrapping around at the end of the chromosome\n• Repeat this process with the parent roles reversed\n0     0     1     0     1     0     0     1\nABc eD hGF\nabC Ed Hgf",
+      "chunk_id": "2c241da1a8c34e5e921df554b594d7ca",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 58,
+      "section": null,
+      "score": 0.1812,
+      "lexical_score": 0.1812,
+      "semantic_score": 0.0577,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S3",
+      "snippet": "DSAI5205 Chapter 2\n34\nThe A* Search\n•A* is an algorithm that use heuristic to guide the search while \nensuring that it will compute a path with the minimum cost.\n•A* computes the function f(n) = g(n) + h(n)\n“actual cost”\n“estimated cost”\n•The h(n) value guides search toward heuristically promising states \nwhile the g(n) value prevents search from persisting indefinitely on \na fruitless search.\n•The function h(n) relies upon some heuristic information available \nfrom the problem domain. It changes from heuristic to heuristic, \nand from problem to problem.\n•The design of good heuristics is a difficult, empirical problem. h(n) \nin general weights how close node n is to the goal.",
+      "chunk_id": "58beb0de0460466f83a50eb55c94ccf3",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 29,
+      "section": null,
+      "score": 0.1811,
+      "lexical_score": 0.1811,
+      "semantic_score": 0.0563,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    },
+    {
+      "id": "S4",
+      "snippet": "DSAI5205 Chapter 2\n35\nA* Search\n•A*: minimize f(n) = g(n) + h(n)\n•g(n) = “cost from the starting node to reach n”\n•h(n) = “estimate of the cost of the cheapest path from n to the goal node”\n10\n15\n20\n20\n15\n5\n18\n25\n33\nng(n)\nh(n)",
+      "chunk_id": "1c08b5a6a7364abca366a09d576ffa87",
+      "document_id": "dabf4e6973384ac794f2d14e1bcf9f86",
+      "filename": "DSAI5205_Chapter2_2026.pdf",
+      "page": 30,
+      "section": null,
+      "score": 0.181,
+      "lexical_score": 0.181,
+      "semantic_score": 0.0877,
+      "retrieval_method": "bm25",
+      "evidence_kind": "retrieved"
+    }
+  ],
+  "document_ids": [
+    "dabf4e6973384ac794f2d14e1bcf9f86"
+  ],
+  "status": "waiting"
+}
