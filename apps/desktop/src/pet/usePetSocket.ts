@@ -575,6 +575,28 @@ export function usePetSocket() {
     return true;
   }
 
+  function submitGraphResume(payload: Record<string, string | number>) {
+    const hitl = conversation.getSnapshot().pendingHitl;
+    const live = socket.current;
+    if (!hitl || !live || live.readyState !== WebSocket.OPEN) return false;
+    live.send(
+      JSON.stringify({
+        type: 'graph_resume',
+        kind: hitl.kind,
+        thread_id: hitl.interruptId,
+        session_id: conversation.getSnapshot().sessionId,
+        request_id: hitl.requestId,
+        payload,
+        ...scopeFields(conversation.getSnapshot().scope),
+      }),
+    );
+    armSendWatchdog();
+    setAnimation('thinking');
+    setBubbleText(DEFAULT_BUBBLE_COPY.thinking);
+    publishLocal('thinking', DEFAULT_BUBBLE_COPY.thinking);
+    return true;
+  }
+
   return {
     connection,
     animation,
@@ -602,5 +624,6 @@ export function usePetSocket() {
     startReviewOffer,
     skipReviewOffer,
     refreshBones,
+    submitGraphResume,
   };
 }

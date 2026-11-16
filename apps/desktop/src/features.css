@@ -19,11 +19,11 @@
 .review-options button.active,.review-options button:hover:not(:disabled){background:#e8edd9;border-color:#c9d3b0;color:#4d6147}
 .chat-review-options{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .chat-review-options button{background:#eef2e4;color:#596b49;padding:7px 10px;font-size:11px}
-.chat-quick-reviews{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
-.chat-quick-reviews button{padding:7px 12px;font-size:11px}
-.next-step-card{margin:0 0 12px;padding:12px 14px;border:1px solid #e4e7d8;border-radius:12px;background:#f7f8f1;display:grid;gap:6px;grid-template-columns:1fr auto;align-items:center}
-.next-step-card strong{grid-column:1/-1;color:#5d684c;font-size:13px}
-.next-step-card p{grid-column:1/-1;margin:0;color:#8a8e76;font-size:12px;line-height:1.45}
+.chat-quick-reviews{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.chat-quick-reviews button{padding:6px 10px;font-size:12px}
+.next-step-card{margin:0 0 12px;padding:12px 14px;border:1px solid var(--border,#e4e4e7);border-radius:6px;background:var(--surface,#fff);display:grid;gap:6px;grid-template-columns:1fr auto;align-items:center}
+.next-step-card strong{grid-column:1/-1;color:var(--text,#18181b);font-size:14px;font-weight:600}
+.next-step-card p{grid-column:1/-1;margin:0;color:var(--text-secondary,#71717a);font-size:13px;line-height:1.45}
 .next-step-card button{justify-self:start}
 .streak-chip,.streak-banner{font-size:11px;color:#73835f}
 .streak-banner{margin:0 0 8px;line-height:1.5}

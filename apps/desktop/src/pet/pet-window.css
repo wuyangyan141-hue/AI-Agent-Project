@@ -335,3 +335,21 @@ html.bone-cursor-on input{cursor:text!important}
   margin:0;padding:8px;font-size:11px;color:#a49b87;text-align:center;
 }
 .pet-shell.history-open .pet-stack{gap:6px}
+.pet-hitl-wrap{
+  -webkit-app-region:no-drag;
+  position:relative;z-index:4;
+  width:min(100%,232px);
+  margin:0 auto 6px;
+}
+.pet-hitl-wrap .hitl-panel{
+  max-width:100%;
+  margin:0;
+  padding:10px;
+  font-size:11px;
+  border-color:#d7dec6;
+  background:#f5f7ef;
+  box-shadow:0 8px 20px #5d64501a;
+}
+.pet-hitl-wrap .hitl-panel h3{font-size:12px}
+.pet-hitl-wrap .hitl-field{font-size:11px}
+.pet-hitl-wrap button{font-size:11px;padding:7px 10px}
