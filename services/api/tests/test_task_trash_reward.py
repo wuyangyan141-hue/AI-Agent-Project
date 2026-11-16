@@ -57,6 +57,31 @@ def test_soft_delete_restore_and_completion_bones(tmp_path, monkeypatch):
     assert client.get('/tasks/trash').json() == []
 
 
+def test_delete_learning_plan_moves_scheduled_tasks_only(tmp_path, monkeypatch):
+    monkeypatch.setenv('DATABASE_PATH', str(tmp_path / 'plan_delete.db'))
+    client = TestClient(app)
+
+    from app.database import store
+
+    plan_a = client.post('/tasks', json={'title': '计划任务 A', 'estimated_minutes': 30}).json()
+    manual = client.post('/tasks', json={'title': '随手记一条', 'estimated_minutes': 20}).json()
+
+    with store.connect() as db:
+        db.execute('UPDATE tasks SET scheduled_day = 1 WHERE id = ?', (plan_a['id'],))
+        db.commit()
+
+    result = client.delete('/tasks/plan').json()
+    assert result['deleted'] == 1
+    assert plan_a['id'] in result['ids']
+
+    active = client.get('/tasks').json()
+    assert len(active) == 1 and active[0]['id'] == manual['id']
+    trash = client.get('/tasks/trash').json()
+    assert len(trash) == 1 and trash[0]['id'] == plan_a['id']
+
+    assert client.delete('/tasks/plan').json()['deleted'] == 0
+
+
 def test_focus_finish_completes_task_and_awards_bones(tmp_path, monkeypatch):
     monkeypatch.setenv('DATABASE_PATH', str(tmp_path / 'focus_checkin.db'))
     client = TestClient(app)

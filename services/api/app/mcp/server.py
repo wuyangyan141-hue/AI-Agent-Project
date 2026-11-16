@@ -81,13 +81,29 @@ def get_focus_timer() -> dict:
         return store.focus_status(db) or {'id': None, 'remaining_seconds': 0}
 
 @mcp.tool()
-def start_review_question(topic: str) -> dict:
-    """Create one guided review question for a topic."""
-    from ..skills.review_session import begin_review
-    from ..skills.review_session import save_review, public_review
-    review = begin_review(topic)
+def start_review_question(topic: str, question_type: str = 'multiple_choice') -> dict:
+    """Create one document-grounded review question (default: multiple choice with a verified correct option)."""
+    from ..skills.review_session import begin_review, save_review, public_review, QUESTION_TYPES
+
+    preferred = question_type if question_type in QUESTION_TYPES else 'multiple_choice'
+    review = begin_review(topic, preferred_type=preferred)
     with store.connect() as db:
-        return public_review(save_review(db,review))
+        return public_review(save_review(db, review))
+
+
+@mcp.tool()
+def generate_quiz_from_documents(topic: str, count: int = 3, question_type: str = 'multiple_choice') -> dict:
+    """Generate several quiz items from uploaded materials via the LLM (falls back to passage-based options offline)."""
+    from ..skills.review_session import QUESTION_TYPES, begin_review, public_review, save_review
+
+    preferred = question_type if question_type in QUESTION_TYPES else 'multiple_choice'
+    count = min(max(int(count), 1), 5)
+    items = []
+    with store.connect() as db:
+        for _ in range(count):
+            review = begin_review(topic, preferred_type=preferred)
+            items.append(public_review(save_review(db, review)))
+    return {'topic': topic, 'question_type': preferred, 'questions': items}
 
 @mcp.tool()
 def write_review_result(review_id: int, answer: str) -> dict:

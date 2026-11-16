@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { ChatLine } from './types';
 import { conversation } from '../chatStore';
+import { messageShowsRagSources } from '../knowledge';
 import { scrollToBottom } from '../scrollToBottom';
 
 /** Bubble-thread transcript above the pet (keeps speech-bubble look). */
@@ -71,9 +72,9 @@ export function PetChatLog({
                   ))}
                 </div>
               )}
-              {!!line.metadata?.sources?.length && (
+              {messageShowsRagSources(line.metadata?.mode, line.metadata?.sources) && (
                 <div className="pet-citations">
-                  {line.metadata.sources.map((source) => (
+                  {line.metadata!.sources!.map((source) => (
                     <button
                       type="button"
                       key={source.id}

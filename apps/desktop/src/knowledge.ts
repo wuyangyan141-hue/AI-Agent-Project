@@ -22,3 +22,10 @@ export async function request<T>(path:string,options:RequestInit={}):Promise<T>{
   return response.status===204?undefined as T:response.json();
 }
 export function sourcePosition(source:Source){return source.page?`第 ${source.page} 页`:source.section || '正文片段';}
+
+/** RAG answer modes that should render chunk citation pills / [S#] links in chat. */
+const RAG_CITATION_MODES=new Set([
+  'llm','extractive','extractive_overview','overview','summary','memory',
+  'comparison','citation_fallback','no_evidence','clarification','model_error','review_feedback',
+]);
+export function messageShowsRagSources(mode?:string, sources?:Source[]){return !!sources?.length && !!mode && RAG_CITATION_MODES.has(mode);}

@@ -49,10 +49,31 @@ def normalize_zh_numerals(text: str) -> str:
     return out
 
 
+_TRAD_TO_SIMP = (
+    ('復習', '复习'),
+    ('複習', '复习'),
+    ('開始', '开始'),
+    ('繼續', '继续'),
+    ('小測', '小测'),
+    ('測驗', '测验'),
+    ('專注', '专注'),
+    ('計劃', '计划'),
+    ('計划', '计划'),
+    ('學習', '学习'),
+    ('資料', '资料'),
+    ('題', '题'),
+    ('選擇', '选择'),
+    ('單選', '单选'),
+    ('複習題', '复习题'),
+)
+
+
 def normalize_utterance(text: str) -> str:
     """Light cleanup shared by speech and typed commands."""
     cleaned = text.strip()
     cleaned = cleaned.replace('ｓ', 's').replace('Ｓ', 's')
+    for src, dst in _TRAD_TO_SIMP:
+        cleaned = cleaned.replace(src, dst)
     cleaned = re.sub(r'\s+', ' ', cleaned)
     cleaned = normalize_zh_numerals(cleaned)
     return cleaned

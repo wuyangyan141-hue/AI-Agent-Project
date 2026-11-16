@@ -11,7 +11,17 @@ from pydantic import BaseModel, Field
 from .agent.service import StudyAgent
 from .database import store
 from .skills.replan import propose_replan
-from .skills.review_session import begin_review, daily_quiz, evaluate_review, weak_point_review, save_review, public_review, grade_saved_review
+from .skills.review_session import (
+    begin_review,
+    compose_review_message,
+    daily_quiz,
+    evaluate_review,
+    public_review,
+    review_warmup_brief,
+    save_review,
+    weak_point_review,
+    grade_saved_review,
+)
 from .skills.learning_loop import format_next_step, mark_study_activity, next_step, today_plan
 from .knowledge.api import router as knowledge_router
 from .knowledge.documents import DocumentError
@@ -20,11 +30,16 @@ from .knowledge.config import Settings
 from .knowledge.service import UNSET
 from .knowledge.routing import route_request, SOCIAL, QUESTION
 from .knowledge.storage import uid
+from .agent.dispatch import COMMAND_ACTIONS, classify_explicit, resolve_turn
 from .agent.intent import StudyIntent, explicit_intent
-from .agent.dispatch import classify_explicit, resolve_turn
 from .runtime_llm import apply_runtime, public_config, save_config
 
 logger = logging.getLogger(__name__)
+
+
+def review_chat_answer(topic: str, document_ids, question: str) -> str:
+    return compose_review_message(review_warmup_brief(topic, document_ids), question)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -128,7 +143,7 @@ async def _send_plan_revise_hitl(
         user_text,
         text,
         session_id,
-        {'draft': draft, 'kind': plan_kind, 'sources': materials.get('sources', []), 'plan_revise': True},
+        {'draft': draft, 'kind': plan_kind, 'mode': 'plan_revise', 'plan_revise': True},
     )
     return saved, hitl, text
 
@@ -177,7 +192,7 @@ async def _handle_plan_revise_resume(
             '',
             '计划草稿已生成，请检查后确认保存。',
             session_id,
-            {'draft': draft, 'kind': plan_kind, 'sources': draft.get('sources', [])},
+            {'draft': draft, 'kind': plan_kind, 'mode': 'plan_draft'},
         )
         coach = saved.get('next_step') or next_step(session_id=session_id)
         await websocket.send_json(
@@ -347,6 +362,14 @@ def update_task(task_id: int, item: TaskUpdate) -> dict:
             raise HTTPException(404, 'Task not found')
     return result
 
+@app.delete('/tasks/plan')
+def delete_learning_plan() -> dict:
+    """Soft-delete every active task that belongs to a generated plan (scheduled_day set)."""
+    with store.connect() as db:
+        ids = store.soft_delete_plan_tasks(db)
+    return {'deleted': len(ids), 'ids': ids}
+
+
 @app.delete('/tasks/{task_id}')
 def delete_task(task_id: int) -> dict:
     with store.connect() as db:
@@ -470,10 +493,12 @@ def start_review(item: ReviewInput):
 @app.post('/reviews/daily-quiz',status_code=201)
 def start_daily_quiz(item: ReviewScope | None = None):
     item=item or ReviewScope()
-    quiz=daily_quiz(document_ids=review_scope(item))
+    scope_ids = review_scope(item)
+    quiz = daily_quiz(document_ids=scope_ids)
+    warmup = review_warmup_brief('今日重点', scope_ids)
     with store.connect() as db:
-        created=[public_review(save_review(db,q,item.session_id)) for q in quiz['items']]
-    return {**quiz,'items':created,'next_step':next_step('review')}
+        created = [public_review(save_review(db, q, item.session_id)) for q in quiz['items']]
+    return {**quiz, 'warmup': warmup, 'items': created, 'next_step': next_step('review')}
 
 @app.post('/reviews/weak-point',status_code=201)
 def start_weak_point(item: ReviewScope | None = None):
@@ -639,7 +664,14 @@ async def chat(websocket: WebSocket):
                         if not first:
                             saved=knowledge.record_exchange('local-user','','小测生成失败，请稍后重试。',session_id,{'mode':'error'})
                         else:
-                            saved=knowledge.record_exchange('local-user','',first['question'],session_id,{'review':first,'quiz':created,'sources':first.get('sources',[]),'mode':'review_question'})
+                            quiz_topic = (first.get('topic') or '今日重点')
+                            saved = knowledge.record_exchange(
+                                'local-user',
+                                '',
+                                review_chat_answer(quiz_topic, ids, first['question']),
+                                session_id,
+                                {'review': first, 'quiz': created, 'mode': 'review_question'},
+                            )
                     elif resume_item.kind=='plan_params':
                         graph_out=await run_in_threadpool(resume_plan_flow,resume_item.thread_id,resume_item.payload)
                         if graph_out.get('status')=='hitl':
@@ -721,26 +753,31 @@ async def chat(websocket: WebSocket):
                                     has_documents=ready,active_topic=bool(context['topic']))
                 direct=classify_explicit(text)
                 pending=history_rows[-1]['metadata'].get('pending_plan') if history_rows else None
+                from .knowledge.routing import CONFUSED
                 if event['type']=='plan_request':
                     plan=PlanInput.model_validate(event.get('payload'))
                     intent=StudyIntent(action='plan',goal=plan.goal,days=plan.days,minutes_per_day=plan.minutes_per_day)
+                elif general:
+                    intent=StudyIntent()
                 elif pending and direct.action=='chat' and route=='chat' and not SOCIAL.search(text) and not QUESTION.search(text):
                     # Confusion is a request to explain, not a study-goal reply for pending plans.
-                    from .knowledge.routing import CONFUSED
                     if CONFUSED.search(text):
                         intent=StudyIntent()
                         route='knowledge'
                     else:
                         intent=StudyIntent.model_validate(pending).model_copy(update={'goal':text[:200]})
-                elif direct.action!='chat' or personal or route!='chat' or general:
+                elif direct.action!='chat':
                     intent=direct
                 else:
                     intent=await asyncio.wait_for(agent.detect_intent(text,history),timeout=30)
-                    # Model may keep picking "plan" after a draft; confusion must explain instead.
-                    from .knowledge.routing import CONFUSED
                     if CONFUSED.search(text) and intent.action=='plan':
                         intent=StudyIntent()
                         route='knowledge'
+                # Study commands (plan, focus, quiz, …) must not be treated as document Q&A.
+                if intent.action in COMMAND_ACTIONS:
+                    route='chat'
+                elif CONFUSED.search(text) and intent.action=='chat':
+                    route='knowledge'
                 with store.connect() as db:
                     waiting=db.execute("SELECT * FROM review_sessions WHERE status='waiting' AND session_id=? ORDER BY id LIMIT 1",(session_id,)).fetchone()
                     waiting=dict(waiting) if waiting else None
@@ -877,7 +914,8 @@ async def chat(websocket: WebSocket):
                             },
                         )
                 elif decision.kind=='command' and intent.action in {'review','quiz','weak'}:
-                    await emit('tool','正在根据资料准备复习题（含单选/判断等）')
+                    tool_label = '正在生成今日小测（选择题）' if intent.action == 'quiz' else '正在整理资料要点并准备复习题'
+                    await emit('tool', tool_label)
                     preferred='multiple_choice' if intent.action=='quiz' else ('short_answer' if intent.action=='review' else 'true_false')
                     with store.connect() as db:
                         db.execute(
@@ -908,9 +946,13 @@ async def chat(websocket: WebSocket):
                         if not first:
                             saved = knowledge.record_exchange('local-user', text, '小测生成失败，请稍后重试。', session_id, {'mode': 'error'})
                         else:
+                            quiz_topic = (first.get('topic') or intent.topic or '今日重点')
                             saved = knowledge.record_exchange(
-                                'local-user', text, first['question'], session_id,
-                                {'review': first, 'quiz': created, 'sources': first.get('sources', []), 'mode': 'review_question'},
+                                'local-user',
+                                text,
+                                review_chat_answer(quiz_topic, ids, first['question']),
+                                session_id,
+                                {'review': first, 'quiz': created, 'mode': 'review_question'},
                             )
                     else:
                         def prepare():
@@ -935,9 +977,19 @@ async def chat(websocket: WebSocket):
                         with store.connect() as db:
                             created = [save_review(db, item, session_id) for item in reviews]
                         first = public_review(created[0])
+                        review_topic = intent.topic or (first.get('topic') if isinstance(first, dict) else None) or '今日重点'
+                        if intent.action == 'weak':
+                            review_topic = (created[0].get('topic') if created else review_topic) or review_topic
                         saved = knowledge.record_exchange(
-                            'local-user', text, first['question'], session_id,
-                            {'review': first, 'quiz': [public_review(q) for q in created], 'sources': first.get('sources', []), 'mode': 'review_question'},
+                            'local-user',
+                            text,
+                            review_chat_answer(review_topic, ids, first['question']),
+                            session_id,
+                            {
+                                'review': first,
+                                'quiz': [public_review(q) for q in created],
+                                'mode': 'review_question',
+                            },
                         )
                 elif decision.kind=='command' and intent.action=='today':
                     await emit('thinking','正在整理今日计划')

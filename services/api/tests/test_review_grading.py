@@ -189,6 +189,7 @@ def test_daily_quiz_prefers_material_topics(monkeypatch):
     quiz = daily_quiz(limit=3)
     assert quiz['count'] == 3
     assert all(item['topic'] not in {'B+树', 'Hash索引', '重点'} for item in quiz['items'])
+    assert all(item['question_type'] == 'multiple_choice' for item in quiz['items'])
 
 
 def test_resolve_vague_topic(monkeypatch):

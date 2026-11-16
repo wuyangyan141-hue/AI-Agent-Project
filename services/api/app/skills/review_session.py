@@ -233,13 +233,58 @@ def _display_question(question: str, options: list[dict] | None = None, question
     return '\n'.join(lines)
 
 
-def _offline_objective(topic: str, criteria: list[str], preferred: QuestionType) -> tuple[str, list[dict], str, str]:
+def _sentence_facts(passages: list[dict], limit: int = 10) -> list[str]:
+    facts: list[str] = []
+    for passage in passages or []:
+        snippet = re.sub(r'\s+', ' ', (passage.get('snippet') or '')).strip()
+        for chunk in re.split(r'[。！？\n；;]', snippet):
+            line = chunk.strip()
+            if len(line) < 10:
+                continue
+            line = line[:160]
+            if line not in facts:
+                facts.append(line)
+            if len(facts) >= limit:
+                return facts
+    return facts
+
+
+def _deterministic_order(items: list[str], salt: str) -> list[str]:
+    return sorted(items, key=lambda text: (hash(f'{salt}:{text}') % 10_000, text))
+
+
+def _offline_objective(
+    topic: str,
+    criteria: list[str],
+    preferred: QuestionType,
+    passages: list[dict] | None = None,
+) -> tuple[str, list[dict], str, str]:
     """Deterministic objective item when the chat model is unavailable."""
+    passages = passages or []
     stem = criteria[0] if criteria else topic
+    if preferred == 'true_false' and passages:
+        fact = _sentence_facts(passages, 1)
+        if fact:
+            question = f'判断：资料中下列表述是否成立——「{fact[0]}」'
+            options = [{'key': 'A', 'text': '正确'}, {'key': 'B', 'text': '错误'}]
+            return question, options, 'A', fact[0]
     if preferred == 'true_false':
         question = f'判断：资料中与「{stem}」相关的表述可以直接用来解释该概念。'
         options = [{'key': 'A', 'text': '正确'}, {'key': 'B', 'text': '错误'}]
         return question, options, 'A', f'资料围绕「{stem}」展开，判断为正确。'
+    if preferred == 'multiple_choice':
+        facts = _sentence_facts(passages, 8)
+        if len(facts) >= 3:
+            correct = max(facts, key=len)
+            distractors = [f for f in facts if f != correct][:3]
+            pool = _deterministic_order([correct, *distractors], topic)[:4]
+            while len(pool) < 4:
+                pool.append('该表述在资料中找不到明确依据')
+            keys = 'ABCD'
+            options = [{'key': keys[i], 'text': pool[i][:200]} for i in range(len(pool))]
+            correct_key = keys[pool.index(correct)]
+            question = f'根据所选资料，关于「{topic}」下列哪一项表述最准确？'
+            return question, options, correct_key, correct
     # multiple_choice / default objective fallback
     pool = [c for c in criteria if c] or [topic, f'{topic}相关概念', '无关干扰项', '未在资料出现的说法']
     while len(pool) < 4:
@@ -263,12 +308,12 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
         topic = raw_topic
     preferred = preferred_type if preferred_type in QUESTION_TYPES else 'short_answer'
     knowledge=get_knowledge()
-    passages=knowledge.search('local-user',topic,document_ids,k=4)
+    passages=knowledge.search('local-user',topic,document_ids,k=8)
     if document_ids and not passages:
         # Generic review topic is resolved from a complete, explicit document summary.
-        passages=knowledge.summarize_document('local-user',document_ids[0])['sources'][:6]
+        passages=knowledge.summarize_document('local-user',document_ids[0])['sources'][:8]
     if not passages:
-        passages = _knowledge_passages(topic, limit=4)
+        passages = _knowledge_passages(topic, limit=8)
     criteria=_criteria_for_topic(topic,passages)
     reference=''
     mode='offline'
@@ -293,13 +338,15 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
             quotes: list[str] = Field(min_length=1,max_length=6)
         try:
             result=structured(knowledge.chat_model,ReviewQuestion,
-                '根据资料出一题可批改的复习题。优先使用 preferred_type。'
+                '根据资料中的学术/专业内容出一题可批改的复习题，优先使用 preferred_type。'
                 '题型：multiple_choice（3–4 个互斥选项）、true_false（A 正确 / B 错误）、'
                 'short_answer（简答）、fill_blank（挖空填关键词）、compare（对比异同）。'
-                '客观题必须给 options 与 correct_key；干扰项要合理但明确错误。'
+                '客观题必须给 options 与 correct_key；correct_key 必须对应唯一能被资料原文支持的选项。'
+                '干扰项须来自同一主题的相近表述或常见误解，但须与资料矛盾或未被资料支持，禁止「干扰项1」等占位。'
+                '选项 text 须为完整可读的句子或短语，尽量改写自资料而非空泛概括。'
                 '主观题 options 留空；评分要点 criteria 为完整正确陈述，不要只列单词。'
-                'topic 必须是资料中的具体术语/小节名（如双MACD、金叉进场），禁止用「预测」「分析」「含义」这类空泛词。'
-                '题目要指向资料中的可核查事实，禁止「说明含义并举一个例子」这类万能套话。'
+                'topic 必须是资料中的具体术语/小节名，禁止用「预测」「分析」「含义」这类空泛词。'
+                '题目要考查资料中的定义、条件、步骤、对比或可核查事实。'
                 'quotes 逐字摘自 sources，source_ids 与 quotes 一一对应。',
                 {'topic':topic,'preferred_type':preferred,'sources':passages})
             known={s['id']:s for s in passages}
@@ -352,7 +399,7 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
             mode='builtin'
             question_type='short_answer'
         elif preferred in OBJECTIVE_TYPES:
-            question, options, correct_key, reference = _offline_objective(topic, criteria, preferred)
+            question, options, correct_key, reference = _offline_objective(topic, criteria, preferred, passages)
             question_type = preferred
             mode = 'offline'
         elif preferred == 'fill_blank':
@@ -727,12 +774,63 @@ _DIFFICULTY_ROTATION = {
 }
 
 
+def review_warmup_brief(topic: str, document_ids=None) -> str:
+    """LLM (or keyword) recap of document knowledge before an interactive review / quiz."""
+    from ..knowledge.integration import get_knowledge
+    from ..knowledge.grounding import structured
+    from pydantic import BaseModel, Field
+
+    knowledge = get_knowledge()
+    resolved = resolve_topic((topic or '').strip() or '今日重点')
+    passages = knowledge.search('local-user', resolved, document_ids, k=6)
+    if not passages:
+        passages = _knowledge_passages(resolved, limit=6)
+    ranked = _knowledge_topics(8)
+    if not passages and not ranked:
+        return '上传资料后，我可以根据文档要点带你复习。'
+    if not passages:
+        return f'【复习要点】本次可先回顾：{"、".join(ranked[:6])}。'
+    if not knowledge.chat_model:
+        fname = (passages[0].get('filename') or '资料').strip()
+        keys = ranked[:5] or [resolved]
+        return f'【复习要点】根据《{fname}》，可重点看：{"、".join(keys)}。'
+    class ReviewWarmup(BaseModel):
+        intro: str = Field(min_length=8, max_length=320)
+        bullets: list[str] = Field(min_length=2, max_length=6)
+
+    try:
+        result = structured(
+            knowledge.chat_model,
+            ReviewWarmup,
+            '根据 sources 中与 topic 相关的学术/专业内容，写一句 intro 和 3–5 条复习要点 bullets。'
+            '每条必须能被资料支撑，禁止编造；不要出题、不要写选项。',
+            {'topic': resolved, 'sources': passages},
+        )
+        lines = [result.intro.strip(), *[f'· {item.strip()}' for item in result.bullets if item.strip()]]
+        return '【复习要点】\n' + '\n'.join(lines)
+    except Exception:
+        fname = (passages[0].get('filename') or '资料').strip()
+        keys = ranked[:5] or [resolved]
+        return f'【复习要点】根据《{fname}》，可先回顾：{"、".join(keys)}。'
+
+
+def compose_review_message(brief: str, question: str) -> str:
+    brief = (brief or '').strip()
+    question = (question or '').strip()
+    if not brief:
+        return question
+    if not question:
+        return brief
+    return f'{brief}\n\n{question}'
+
+
 def daily_quiz(
     topics: list[str] | None = None,
     limit: int = 3,
     document_ids=None,
     *,
     difficulty: str = 'standard',
+    multiple_choice_only: bool = True,
 ) -> dict:
     limit = max(1, min(limit, 5))
     rotation = _DIFFICULTY_ROTATION.get(difficulty, QUESTION_TYPES)
@@ -747,7 +845,10 @@ def daily_quiz(
         chosen = ['今日重点']
     items = []
     for index, topic in enumerate(chosen):
-        preferred = rotation[index % len(rotation)]
+        if multiple_choice_only:
+            preferred: QuestionType = 'multiple_choice'
+        else:
+            preferred = rotation[index % len(rotation)]  # type: ignore[assignment]
         started = begin_review(topic, document_ids=document_ids, preferred_type=preferred)
         items.append(started)
     return {
