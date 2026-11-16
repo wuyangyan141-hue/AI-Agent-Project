@@ -1,7 +1,8 @@
 """LangGraph HITL smoke tests."""
 from __future__ import annotations
 
-from app.graph.parse import plan_needs_hitl, quiz_needs_hitl
+from app.graph.parse import plan_missing_fields, plan_needs_hitl, quiz_missing_fields, quiz_needs_hitl
+from app.graph.plan_revise import plan_revise_hitl
 from app.graph.runner import resume_quiz_flow, run_quiz_flow
 
 
@@ -21,6 +22,21 @@ def test_run_quiz_flow_interrupts_without_params():
     assert out.get('status') == 'hitl'
     assert out.get('kind') == 'quiz_params'
     assert out.get('hitl', {}).get('fields')
+
+
+def test_missing_field_hints():
+    assert quiz_missing_fields({}) == ['limit', 'difficulty']
+    assert plan_missing_fields({'goal': '数据库'}, require_goal=True) == ['days', 'minutes_per_day']
+
+
+def test_plan_revise_hitl_includes_preview():
+    hitl = plan_revise_hitl(
+        {'id': 1, 'goal': '复习索引', 'steps': [{'day': 1, 'title': '阅读', 'minutes': 30}]},
+        'plan',
+    )
+    assert hitl['kind'] == 'plan_revise'
+    assert '阅读' in (hitl.get('preview') or '')
+    assert hitl['defaults']['draft_id'] == 1
 
 
 def test_resume_quiz_flow_generates_questions():

@@ -180,6 +180,22 @@ def save_plan_draft(db: sqlite3.Connection, payload: dict) -> dict:
     return {'id': cursor.lastrowid, **payload}
 
 
+def load_plan_draft(db: sqlite3.Connection, draft_id: int) -> dict | None:
+    row = db.execute('SELECT payload FROM plan_drafts WHERE id=?', (draft_id,)).fetchone()
+    if row is None:
+        return None
+    payload = json.loads(row['payload'])
+    return {'id': draft_id, **payload}
+
+
+def load_replan_draft(db: sqlite3.Connection, draft_id: int) -> dict | None:
+    row = db.execute('SELECT payload FROM replan_drafts WHERE id=?', (draft_id,)).fetchone()
+    if row is None:
+        return None
+    payload = json.loads(row['payload'])
+    return {'id': draft_id, **payload}
+
+
 def apply_plan_draft(db: sqlite3.Connection, draft_id: int) -> dict | None:
     db.execute('BEGIN IMMEDIATE')
     row = db.execute('SELECT payload, applied FROM plan_drafts WHERE id=?', (draft_id,)).fetchone()

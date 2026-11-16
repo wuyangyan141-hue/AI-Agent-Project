@@ -265,8 +265,8 @@ export function PetWindow() {
               requestId={pendingHitl.requestId}
               sessionId={shared.sessionId}
               disabled={sending || connection !== 'connected'}
-              onSubmit={(payload) => {
-                submitGraphResume(payload);
+              onSubmit={(payload, action) => {
+                submitGraphResume(payload, action);
               }}
               onCancel={() => conversation.cancelHitl()}
             />

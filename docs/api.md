@@ -29,7 +29,9 @@ Answer modes: `general`, `memory`, `extractive`, `llm`, `no_evidence`, `clarific
 
 ### Human-in-the-loop (protocol 2)
 
-When quiz or plan parameters are missing from the utterance, the server may pause the LangGraph flow and emit:
+When quiz or plan parameters are missing from the utterance, the server may pause the LangGraph flow and emit choices (e.g. difficulty, days). After a plan draft is generated, the server may emit `plan_revise` so the user can edit goals/schedule, type revision notes, and regenerate—or accept the current draft.
+
+Parameter collection example:
 
 ```json
 {
@@ -57,7 +59,30 @@ Resume over WebSocket:
 }
 ```
 
-REST equivalent: `POST /graph/resume` with `{ "thread_id", "kind", "payload" }`.
+Plan revise resume (`kind`: `plan_revise`, `thread_id` = `session_id`):
+
+```json
+{
+  "type": "graph_resume",
+  "kind": "plan_revise",
+  "thread_id": "session-id",
+  "session_id": "session-id",
+  "request_id": "same-as-outbound",
+  "payload": {
+    "action": "regenerate",
+    "draft_id": 12,
+    "plan_kind": "plan",
+    "goal": "复习数据库索引",
+    "days": "5",
+    "minutes_per_day": "45",
+    "revision": "第二天多做练习题"
+  }
+}
+```
+
+Use `"action": "accept"` to finalize and receive `plan_draft`.
+
+REST equivalent: `POST /graph/resume` with `{ "thread_id", "kind", "payload" }` (quiz/plan params only; plan revise is WebSocket-first).
 
 Learner style (non-system): `GET/PUT /learner/profile` with `answer_style`, `tone`, `language`, `background`, `notes`.
 

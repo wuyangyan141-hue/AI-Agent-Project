@@ -38,6 +38,24 @@ def quiz_needs_hitl(params: dict) -> bool:
 def plan_needs_hitl(params: dict, *, require_goal: bool) -> bool:
     if params.get('confirmed'):
         return False
+    return bool(plan_missing_fields(params, require_goal=require_goal))
+
+
+def quiz_missing_fields(params: dict) -> list[str]:
+    missing: list[str] = []
+    if 'limit' not in params:
+        missing.append('limit')
+    if 'difficulty' not in params:
+        missing.append('difficulty')
+    return missing
+
+
+def plan_missing_fields(params: dict, *, require_goal: bool) -> list[str]:
+    missing: list[str] = []
     if require_goal and not (params.get('goal') or '').strip():
-        return True
-    return 'days' not in params or 'minutes_per_day' not in params
+        missing.append('goal')
+    if 'days' not in params:
+        missing.append('days')
+    if 'minutes_per_day' not in params:
+        missing.append('minutes_per_day')
+    return missing

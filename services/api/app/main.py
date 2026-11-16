@@ -103,8 +103,183 @@ class LearnerProfileInput(BaseModel):
 
 class GraphResumeInput(BaseModel):
     thread_id: str = Field(min_length=1, max_length=120)
-    kind: str = Field(pattern='^(quiz_params|plan_params)$')
+    kind: str = Field(pattern='^(quiz_params|plan_params|plan_revise)$')
     payload: dict = Field(default_factory=dict)
+
+
+async def _send_plan_revise_hitl(
+    websocket,
+    *,
+    knowledge,
+    request_id: str,
+    session_id: str,
+    draft: dict,
+    plan_kind: str,
+    user_text: str,
+    materials: dict,
+    answer: str | None = None,
+) -> tuple[dict, dict, str]:
+    from .graph.plan_revise import plan_revise_hitl
+
+    hitl = plan_revise_hitl(draft, plan_kind)
+    text = answer or '计划初稿已生成，可填写修改意见后重新生成，或确认使用当前版本。'
+    saved = knowledge.record_exchange(
+        'local-user',
+        user_text,
+        text,
+        session_id,
+        {'draft': draft, 'kind': plan_kind, 'sources': materials.get('sources', []), 'plan_revise': True},
+    )
+    return saved, hitl, text
+
+
+async def _handle_plan_revise_resume(
+    websocket,
+    *,
+    resume_item: GraphResumeInput,
+    request_id: str,
+    session_id: str,
+    ids,
+    knowledge,
+    emit,
+) -> bool:
+    """Return True if the websocket turn was fully handled (caller should continue loop)."""
+    payload = resume_item.payload or {}
+    action = str(payload.get('action') or 'regenerate').strip().lower()
+    draft_id = payload.get('draft_id')
+    try:
+        draft_id = int(draft_id)
+    except (TypeError, ValueError):
+        await websocket.send_json(
+            {'type': 'error', 'text': '计划草稿无效，请重新生成计划。', 'state': 'error', 'request_id': request_id}
+        )
+        return True
+    plan_kind_hint = str(payload.get('plan_kind') or 'plan')
+    with store.connect() as db:
+        draft = (
+            store.load_replan_draft(db, draft_id)
+            if plan_kind_hint == 'replan'
+            else store.load_plan_draft(db, draft_id)
+        )
+        if draft is None and plan_kind_hint != 'replan':
+            draft = store.load_replan_draft(db, draft_id)
+        elif draft is None:
+            draft = store.load_plan_draft(db, draft_id)
+    if not draft:
+        await websocket.send_json(
+            {'type': 'error', 'text': '找不到计划草稿，请重新生成计划。', 'state': 'error', 'request_id': request_id}
+        )
+        return True
+    plan_kind = str(payload.get('plan_kind') or draft.get('kind') or 'plan')
+    if action == 'accept':
+        saved = knowledge.record_exchange(
+            'local-user',
+            '',
+            '计划草稿已生成，请检查后确认保存。',
+            session_id,
+            {'draft': draft, 'kind': plan_kind, 'sources': draft.get('sources', [])},
+        )
+        coach = saved.get('next_step') or next_step(session_id=session_id)
+        await websocket.send_json(
+            {
+                **saved,
+                'type': 'plan_draft',
+                'text': saved['answer'],
+                'state': 'success',
+                'answer_mode': saved['mode'],
+                'request_id': request_id,
+                'next_step': coach,
+                'mode': agent.mode,
+                'session_id': session_id,
+                'kind': plan_kind,
+                'draft': draft,
+            }
+        )
+        return True
+
+    goal = str(payload.get('goal') or draft.get('goal') or '').strip()
+    if not goal:
+        await websocket.send_json(
+            {'type': 'error', 'text': '请填写学习目标。', 'state': 'error', 'request_id': request_id}
+        )
+        return True
+    try:
+        days = int(payload.get('days') or draft.get('days') or 3)
+        minutes = int(payload.get('minutes_per_day') or draft.get('minutes_per_day') or 45)
+    except (TypeError, ValueError):
+        await websocket.send_json(
+            {'type': 'error', 'text': '天数或每天时长无效。', 'state': 'error', 'request_id': request_id}
+        )
+        return True
+    days = max(1, min(14, days))
+    minutes = max(15, min(240, minutes))
+    revision = str(payload.get('revision') or '').strip()
+    previous = draft.get('steps') or draft.get('schedule') or []
+    doc_ids = draft.get('document_ids') if draft.get('document_ids') is not None else ids
+    await emit('tool', '正在根据你的修改意见重新生成计划')
+    if plan_kind == 'plan':
+        materials = await run_in_threadpool(knowledge.learning_context, 'local-user', goal, doc_ids)
+        from .skills.study_plan import grounded_goal
+
+        plan_goal = grounded_goal(goal, materials)
+        steps = [
+            step.__dict__
+            for step in await asyncio.wait_for(
+                agent.generate_plan(
+                    plan_goal,
+                    days,
+                    minutes,
+                    material_context=materials,
+                    revision=revision or None,
+                    previous_steps=previous if revision else None,
+                ),
+                timeout=60,
+            )
+        ]
+        with store.connect() as db:
+            new_draft = store.save_plan_draft(
+                db,
+                {
+                    'goal': plan_goal,
+                    'steps': steps,
+                    'sources': materials['sources'],
+                    'document_ids': materials['document_ids'],
+                    'days': days,
+                    'minutes_per_day': minutes,
+                },
+            )
+        materials_out = materials
+    else:
+        with store.connect() as db:
+            schedule = propose_replan(store.list_tasks(db), days, minutes)
+            new_draft = store.save_replan_draft(db, schedule)
+            new_draft = {**new_draft, 'goal': goal, 'days': days, 'minutes_per_day': minutes}
+        materials_out = {'sources': [], 'document_ids': doc_ids}
+
+    saved, hitl, text = await _send_plan_revise_hitl(
+        websocket,
+        knowledge=knowledge,
+        request_id=request_id,
+        session_id=session_id,
+        draft=new_draft,
+        plan_kind=plan_kind,
+        user_text=revision,
+        materials=materials_out,
+        answer='已按你的意见更新初稿，可继续修改或确认使用。',
+    )
+    await websocket.send_json(
+        {
+            'type': 'hitl_required',
+            'state': 'thinking',
+            'text': text,
+            'request_id': request_id,
+            'session_id': session_id,
+            'hitl': hitl,
+            'interrupt_id': session_id,
+            'kind': 'plan_revise',
+        }
+    )
+    return True
 
 @app.get('/health')
 def health() -> dict:
@@ -438,7 +613,18 @@ async def chat(websocket: WebSocket):
                     document_ids=event.get('document_ids',UNSET)
                     ids=knowledge.resolve_scope('local-user',session_id,document_ids)
                     saved=None;out_type='reply';extra={}
-                    if resume_item.kind=='quiz_params':
+                    if resume_item.kind=='plan_revise':
+                        if await _handle_plan_revise_resume(
+                            websocket,
+                            resume_item=resume_item,
+                            request_id=request_id,
+                            session_id=session_id,
+                            ids=ids,
+                            knowledge=knowledge,
+                            emit=emit,
+                        ):
+                            continue
+                    elif resume_item.kind=='quiz_params':
                         graph_out=await run_in_threadpool(resume_quiz_flow,resume_item.thread_id,resume_item.payload)
                         if graph_out.get('status')=='hitl':
                             await websocket.send_json({
@@ -454,7 +640,7 @@ async def chat(websocket: WebSocket):
                             saved=knowledge.record_exchange('local-user','','小测生成失败，请稍后重试。',session_id,{'mode':'error'})
                         else:
                             saved=knowledge.record_exchange('local-user','',first['question'],session_id,{'review':first,'quiz':created,'sources':first.get('sources',[]),'mode':'review_question'})
-                    else:
+                    elif resume_item.kind=='plan_params':
                         graph_out=await run_in_threadpool(resume_plan_flow,resume_item.thread_id,resume_item.payload)
                         if graph_out.get('status')=='hitl':
                             await websocket.send_json({
@@ -481,11 +667,36 @@ async def chat(websocket: WebSocket):
                                 draft=store.save_plan_draft(db,{'goal':intent.goal,'steps':steps,'sources':materials['sources'],'document_ids':materials['document_ids']}) if action=='plan' else store.save_replan_draft(db,propose_replan(store.list_tasks(db),intent.days,intent.minutes_per_day))
                             if action=='plan' and intent.goal.strip():
                                 knowledge.set_context('local-user',session_id,materials.get('document_ids') if materials.get('document_ids') is not None else ids,topic=intent.goal[:200])
-                            saved=knowledge.record_exchange('local-user','','计划草稿已生成，请检查后确认保存。',session_id,{'draft':draft,'kind':action,'sources':materials['sources']})
-                            out_type='plan_draft'
-                    coach=saved.get('next_step') or next_step(session_id=session_id)
-                    await websocket.send_json({**saved,'type':out_type,'text':saved['answer'],'state':'success','answer_mode':saved['mode'],
-                        'request_id':request_id,'next_step':coach,'mode':agent.mode})
+                            draft_payload = {
+                                **draft,
+                                'days': intent.days,
+                                'minutes_per_day': intent.minutes_per_day,
+                            }
+                            _, hitl, text = await _send_plan_revise_hitl(
+                                websocket,
+                                knowledge=knowledge,
+                                request_id=request_id,
+                                session_id=session_id,
+                                draft=draft_payload,
+                                plan_kind=action,
+                                user_text='',
+                                materials=materials,
+                            )
+                            await websocket.send_json({
+                                'type': 'hitl_required',
+                                'state': 'thinking',
+                                'text': text,
+                                'request_id': request_id,
+                                'session_id': session_id,
+                                'hitl': hitl,
+                                'interrupt_id': session_id,
+                                'kind': 'plan_revise',
+                            })
+                            continue
+                    if saved is not None:
+                        coach=saved.get('next_step') or next_step(session_id=session_id)
+                        await websocket.send_json({**saved,'type':out_type,'text':saved['answer'],'state':'success','answer_mode':saved['mode'],
+                            'request_id':request_id,'next_step':coach,'mode':agent.mode,'session_id':session_id})
                     continue
                 requested=event.get('session_id',active_session_id)
                 if requested is not None and (not isinstance(requested,str) or not re.fullmatch(r'[a-f0-9]{32}',requested)):
@@ -605,8 +816,32 @@ async def chat(websocket: WebSocket):
                             else: draft=store.save_replan_draft(db,propose_replan(store.list_tasks(db),intent.days,intent.minutes_per_day))
                         if intent.action=='plan' and intent.goal.strip():
                             knowledge.set_context('local-user',session_id,materials.get('document_ids') if materials.get('document_ids') is not None else ids,topic=intent.goal[:200])
-                        saved=knowledge.record_exchange('local-user',text,'计划草稿已生成，请检查后确认保存。',session_id,{'draft':draft,'kind':intent.action,'sources':materials['sources']})
-                        out_type='plan_draft'
+                        draft_payload = {
+                            **draft,
+                            'days': intent.days,
+                            'minutes_per_day': intent.minutes_per_day,
+                        }
+                        _, hitl, hitl_text = await _send_plan_revise_hitl(
+                            websocket,
+                            knowledge=knowledge,
+                            request_id=request_id,
+                            session_id=session_id,
+                            draft=draft_payload,
+                            plan_kind=intent.action,
+                            user_text=text,
+                            materials=materials,
+                        )
+                        await websocket.send_json({
+                            'type': 'hitl_required',
+                            'state': 'thinking',
+                            'text': hitl_text,
+                            'request_id': request_id,
+                            'session_id': session_id,
+                            'hitl': hitl,
+                            'interrupt_id': session_id,
+                            'kind': 'plan_revise',
+                        })
+                        continue
                 elif decision.kind=='command' and intent.action=='focus':
                     await emit('tool','正在开始专注')
                     duration=(intent.seconds/60.0) if intent.seconds else float(intent.minutes or 25)
