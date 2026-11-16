@@ -575,7 +575,7 @@ export function usePetSocket() {
     return true;
   }
 
-  function submitGraphResume(payload: Record<string, string | number>) {
+  function submitGraphResume(payload: Record<string, string | number>, action?: string) {
     const hitl = conversation.getSnapshot().pendingHitl;
     const live = socket.current;
     if (!hitl || !live || live.readyState !== WebSocket.OPEN) return false;
@@ -586,7 +586,7 @@ export function usePetSocket() {
         thread_id: hitl.interruptId,
         session_id: conversation.getSnapshot().sessionId,
         request_id: hitl.requestId,
-        payload,
+        payload: action ? { ...payload, action } : payload,
         ...scopeFields(conversation.getSnapshot().scope),
       }),
     );

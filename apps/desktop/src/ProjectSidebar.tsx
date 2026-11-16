@@ -25,12 +25,12 @@ type Props = {
   onUploadToProject: (projectId: string, files: FileList | File[]) => void;
 };
 
-const toolNav: { key: PanelTab; label: string; glyph: string }[] = [
-  { key: 'library', label: '资料库', glyph: '📚' },
-  { key: 'tasks', label: '任务', glyph: '🦴' },
-  { key: 'memory', label: '偏好', glyph: '💚' },
-  { key: 'history', label: '历史', glyph: '🐾' },
-  { key: 'settings', label: '设置', glyph: '⚙' },
+const toolNav: { key: PanelTab; label: string }[] = [
+  { key: 'library', label: '资料库' },
+  { key: 'tasks', label: '任务' },
+  { key: 'memory', label: '偏好' },
+  { key: 'history', label: '历史' },
+  { key: 'settings', label: '设置' },
 ];
 
 export function ProjectSidebar({
@@ -100,11 +100,11 @@ export function ProjectSidebar({
                 <div className="project-row">
                   <button
                     type="button"
-                    className="project-chevron"
+                    className={`project-chevron${open ? ' is-open' : ''}`}
                     aria-expanded={open}
                     onClick={() => toggle(project.id)}
                   >
-                    {open ? '▾' : '▸'}
+                    <span className="chevron-mark" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -112,9 +112,6 @@ export function ProjectSidebar({
                     onClick={() => onSelectProject(project)}
                     title={project.name}
                   >
-                    <span className="folder-glyph" aria-hidden="true">
-                      🐕‍🦺
-                    </span>
                     <span className="project-name">{project.name}</span>
                   </button>
                   <button
@@ -123,16 +120,13 @@ export function ProjectSidebar({
                     title="重命名"
                     onClick={() => onRenameProject(project)}
                   >
-                    ✎
+                    改名
                   </button>
                 </div>
                 {open && (
                   <ul className="project-files">
                     {project.files.map((file) => (
                       <li key={file.id} className="project-file">
-                        <span className="file-glyph" aria-hidden="true">
-                          📄
-                        </span>
                         <span className="file-name" title={file.filename}>
                           {file.filename}
                         </span>
@@ -203,9 +197,6 @@ export function ProjectSidebar({
             className={tab === item.key ? 'active' : ''}
             onClick={() => onSelectTab(item.key)}
           >
-            <span className="nav-glyph" aria-hidden="true">
-              {item.glyph}
-            </span>
             {item.label}
             {item.key === 'library' && libraryCount > 0 && <span className="tab-count">{libraryCount}</span>}
           </button>

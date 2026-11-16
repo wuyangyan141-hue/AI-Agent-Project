@@ -421,7 +421,7 @@ function App() {
     if (sending) return;
     void createProject();
   }
-  function submitHitl(payload: Record<string, string | number>) {
+  function submitHitl(payload: Record<string, string | number>, action?: string) {
     const hitl = shared.pendingHitl;
     if (!hitl || !socket.current || socket.current.readyState !== WebSocket.OPEN) return;
     socket.current.send(JSON.stringify({
@@ -430,7 +430,7 @@ function App() {
       thread_id: hitl.interruptId,
       session_id: session.current,
       request_id: hitl.requestId,
-      payload,
+      payload: action ? { ...payload, action } : payload,
       ...scopeFields(scope),
     }));
     setActivity('正在继续…');

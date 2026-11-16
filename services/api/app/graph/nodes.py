@@ -8,7 +8,14 @@ from langgraph.types import interrupt
 from ..agent.intent import StudyIntent
 from ..database import store
 from ..skills.review_session import daily_quiz, public_review, save_review
-from .parse import parse_plan_utterance, parse_quiz_utterance, plan_needs_hitl, quiz_needs_hitl
+from .parse import (
+    parse_plan_utterance,
+    parse_quiz_utterance,
+    plan_missing_fields,
+    plan_needs_hitl,
+    quiz_missing_fields,
+    quiz_needs_hitl,
+)
 from .schemas import PLAN_HITL_SCHEMA, QUIZ_HITL_SCHEMA
 from .state import CompanionState
 
@@ -19,13 +26,17 @@ def quiz_collect(state: CompanionState) -> CompanionState:
     if quiz_needs_hitl(params):
         resume = interrupt({
             **QUIZ_HITL_SCHEMA,
+            'missing': quiz_missing_fields(params),
             'defaults': {
-                'limit': params.get('limit', 3),
+                'limit': str(params.get('limit', 3)),
                 'difficulty': params.get('difficulty', 'standard'),
             },
         })
         if isinstance(resume, dict):
-            params.update(resume)
+            merged = dict(resume)
+            if merged.get('limit') not in (None, ''):
+                merged['limit'] = int(merged['limit'])
+            params.update(merged)
         params['confirmed'] = True
     else:
         params['confirmed'] = True
@@ -68,14 +79,20 @@ def plan_collect(state: CompanionState) -> CompanionState:
     if plan_needs_hitl(params, require_goal=intent.action == 'plan'):
         resume = interrupt({
             **PLAN_HITL_SCHEMA,
+            'missing': plan_missing_fields(params, require_goal=intent.action == 'plan'),
             'defaults': {
                 'goal': params.get('goal', ''),
-                'days': params.get('days') or 3,
-                'minutes_per_day': params.get('minutes_per_day') or 45,
+                'days': str(params.get('days') or 3),
+                'minutes_per_day': str(params.get('minutes_per_day') or 45),
             },
         })
         if isinstance(resume, dict):
-            params.update(resume)
+            merged = dict(resume)
+            if merged.get('days') not in (None, ''):
+                merged['days'] = int(merged['days'])
+            if merged.get('minutes_per_day') not in (None, ''):
+                merged['minutes_per_day'] = int(merged['minutes_per_day'])
+            params.update(merged)
         params['confirmed'] = True
     else:
         params['confirmed'] = True

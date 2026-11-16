@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from 'react';
 import type { ChatMessage, Source } from './knowledge';
-import type { HitlRequiredEvent, HitlSchema, ServerEvent } from './protocol';
+import type { HitlKind, HitlRequiredEvent, HitlSchema, ServerEvent } from './protocol';
 
 export type PendingHitl = {
-  kind: 'quiz_params' | 'plan_params';
+  kind: HitlKind;
   hitl: HitlSchema;
   interruptId: string;
   requestId: string;
@@ -67,21 +67,32 @@ export function createConversationStore(port?: Port, disk?: Disk) {
     receiveHitl(event: HitlRequiredEvent) {
       if (!event.request_id || event.request_id !== state.pending?.id) return false;
       const interruptId = event.interrupt_id || event.session_id || state.sessionId || event.request_id;
-      update((current) => ({
-        sessionId: event.session_id || current.sessionId,
-        pending: { id: event.request_id, updatedAt: Date.now() },
-        pendingHitl: {
-          kind: event.kind,
-          hitl: event.hitl,
-          interruptId,
-          requestId: event.request_id,
-        },
-        status: { state: event.state, text: event.text },
-        messages: [
-          ...current.messages,
-          { id: crypto.randomUUID(), role: 'assistant', content: event.text, metadata: { mode: 'hitl' } },
-        ],
-      }));
+      update((current) => {
+        const refreshRevise =
+          event.kind === 'plan_revise' && current.pendingHitl?.kind === 'plan_revise';
+        return {
+          sessionId: event.session_id || current.sessionId,
+          pending: { id: event.request_id, updatedAt: Date.now() },
+          pendingHitl: {
+            kind: event.kind,
+            hitl: event.hitl,
+            interruptId,
+            requestId: event.request_id,
+          },
+          status: { state: event.state, text: event.text },
+          messages: refreshRevise
+            ? current.messages
+            : [
+                ...current.messages,
+                {
+                  id: crypto.randomUUID(),
+                  role: 'assistant',
+                  content: event.text,
+                  metadata: { mode: 'hitl' },
+                },
+              ],
+        };
+      });
       return true;
     },
     receive(event: ServerEvent) {

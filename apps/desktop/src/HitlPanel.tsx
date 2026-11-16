@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
-import type { HitlSchema } from './protocol';
+import type { HitlKind, HitlSchema } from './protocol';
 
 type Props = {
   schema: HitlSchema;
   interruptId: string;
-  kind: 'quiz_params' | 'plan_params';
+  kind: HitlKind;
   requestId: string;
   sessionId: string | null;
   disabled?: boolean;
-  onSubmit: (payload: Record<string, string | number>) => void;
+  onSubmit: (payload: Record<string, string | number>, action?: string) => void;
   onCancel: () => void;
 };
 
-export function HitlPanel({ schema, disabled, onSubmit, onCancel }: Props) {
+export function HitlPanel({ schema, kind, disabled, onSubmit, onCancel }: Props) {
+  const missing = useMemo(() => new Set(schema.missing || []), [schema.missing]);
   const defaults = useMemo(() => {
     const fromSchema = schema.defaults || {};
     const fromFields: Record<string, string | number> = {};
@@ -39,25 +40,47 @@ export function HitlPanel({ schema, disabled, onSubmit, onCancel }: Props) {
     setValues((prev) => ({ ...prev, [key]: raw }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function buildPayload(): Record<string, string | number> {
     const payload: Record<string, string | number> = {};
     for (const field of schema.fields) {
       const value = values[field.key];
       if (value === undefined || value === '') continue;
       payload[field.key] = value;
     }
-    onSubmit(payload);
+    if (schema.defaults?.draft_id !== undefined) {
+      payload.draft_id = schema.defaults.draft_id as number;
+    }
+    if (schema.defaults?.plan_kind !== undefined) {
+      payload.plan_kind = schema.defaults.plan_kind as string;
+    }
+    return payload;
   }
 
-  const submitLabel = schema.kind === 'quiz_params' ? '开始出题' : '生成计划';
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    onSubmit(buildPayload(), kind === 'plan_revise' ? 'regenerate' : undefined);
+  }
+
+  const submitLabel =
+    kind === 'quiz_params' ? '开始出题' : kind === 'plan_revise' ? '按修改重新生成' : '生成计划';
 
   return (
     <form className="hitl-panel" onSubmit={handleSubmit} aria-label={schema.title}>
       <h3>{schema.title}</h3>
+      {kind === 'plan_revise' && schema.preview ? (
+        <pre className="hitl-preview" aria-label="计划预览">
+          {schema.preview}
+        </pre>
+      ) : null}
       {schema.fields.map((field) => (
-        <label key={field.key} className="hitl-field">
-          <span>{field.label}</span>
+        <label
+          key={field.key}
+          className={`hitl-field${missing.has(field.key) ? ' hitl-field-missing' : ''}`}
+        >
+          <span>
+            {field.label}
+            {missing.has(field.key) ? '（请选择）' : ''}
+          </span>
           {field.type === 'select' ? (
             <select
               aria-label={field.label}
@@ -81,6 +104,16 @@ export function HitlPanel({ schema, disabled, onSubmit, onCancel }: Props) {
               value={Number(values[field.key] ?? field.default ?? 0)}
               onChange={(e) => setField(field.key, e.target.value)}
             />
+          ) : field.type === 'textarea' ? (
+            <textarea
+              aria-label={field.label}
+              disabled={disabled}
+              maxLength={field.maxLength ?? 800}
+              placeholder={field.placeholder}
+              rows={4}
+              value={String(values[field.key] ?? '')}
+              onChange={(e) => setField(field.key, e.target.value)}
+            />
           ) : (
             <input
               type="text"
@@ -97,6 +130,15 @@ export function HitlPanel({ schema, disabled, onSubmit, onCancel }: Props) {
         <button type="submit" disabled={disabled}>
           {submitLabel}
         </button>
+        {kind === 'plan_revise' ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onSubmit(buildPayload(), 'accept')}
+          >
+            就用这版
+          </button>
+        ) : null}
         <button type="button" className="quiet" disabled={disabled} onClick={onCancel}>
           取消
         </button>
