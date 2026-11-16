@@ -11,6 +11,11 @@ export type TodayPlanPayload={text?:string;tasks?:TodayPlanTask[];day?:number|nu
 export type PlanOption={id:number;key:string;label:string;blurb?:string;minutes?:number;steps?:{day:number;title:string;minutes:number}[]};
 export type ChatMessage={id:string;role:'user'|'assistant';content:string;metadata?:{sources?:Source[];mode?:string;warning?:string;draft?:import('./protocol').PlanDraftEvent;kind?:'plan'|'replan';review?:ReviewPayload;today_plan?:TodayPlanPayload;plan_options?:PlanOption[];offer_review?:boolean;next_step?:LearningNextStep}};
 export type Conversation={id:string;title:string;updated_at:string};
+export type LearningProject={
+  id:string;name:string;session_id:string;document_ids:string[];
+  files:{id:string;filename:string;status:string}[];
+  created_at:string;updated_at:string;
+};
 export async function request<T>(path:string,options:RequestInit={}):Promise<T>{
   const response=await fetch(api+path,{...options,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...options.headers}});
   if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(typeof body.detail==='string'?body.detail:'请求失败，请检查服务或输入内容。');}

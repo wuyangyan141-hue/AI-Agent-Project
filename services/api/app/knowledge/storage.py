@@ -81,6 +81,18 @@ class Database:
                     cache_key TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
                     payload_json TEXT NOT NULL, created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS learning_projects (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+                    session_id TEXT NOT NULL REFERENCES knowledge_sessions(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS learning_projects_user ON learning_projects(user_id);
+                CREATE TABLE IF NOT EXISTS learning_project_files (
+                    project_id TEXT NOT NULL REFERENCES learning_projects(id) ON DELETE CASCADE,
+                    document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, document_id)
+                );
             """)
 
     @contextmanager

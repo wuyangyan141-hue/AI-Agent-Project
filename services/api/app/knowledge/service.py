@@ -616,6 +616,108 @@ class KnowledgeService:
                 ranked.append(dict(memory, score=round(score, 4)))
         return sorted(ranked, key=lambda item: item["score"], reverse=True)[:k]
 
+    def list_projects(self, user_id):
+        rows = self.db.all(
+            "SELECT * FROM learning_projects WHERE user_id=? ORDER BY updated_at DESC",
+            (user_id,),
+        )
+        out = []
+        for row in rows:
+            doc_ids = [
+                r['document_id']
+                for r in self.db.all(
+                    'SELECT document_id FROM learning_project_files WHERE project_id=? ORDER BY created_at',
+                    (row['id'],),
+                )
+            ]
+            files = []
+            for doc_id in doc_ids:
+                try:
+                    doc = self.get_document(user_id, doc_id)
+                    files.append({'id': doc['id'], 'filename': doc['filename'], 'status': doc['status']})
+                except KeyError:
+                    continue
+            out.append({**row, 'document_ids': doc_ids, 'files': files})
+        return out
+
+    def get_project(self, user_id, project_id):
+        row = self.db.one(
+            'SELECT * FROM learning_projects WHERE id=? AND user_id=?',
+            (project_id, user_id),
+        )
+        if not row:
+            raise KeyError('找不到该学习项目。')
+        items = self.list_projects(user_id)
+        match = next((p for p in items if p['id'] == project_id), None)
+        return match or {**row, 'document_ids': [], 'files': []}
+
+    def create_project(self, user_id, name):
+        title = (name or '新学习夹').strip()[:40] or '新学习夹'
+        session_id = self.ensure_session(user_id, title)
+        self.set_context(user_id, session_id, [])
+        project_id = uid()
+        ts = now()
+        self.db.execute(
+            'INSERT INTO learning_projects VALUES(?,?,?,?,?,?)',
+            (project_id, user_id, title, session_id, ts, ts),
+        )
+        return self.get_project(user_id, project_id)
+
+    def rename_project(self, user_id, project_id, name):
+        project = self.get_project(user_id, project_id)
+        title = (name or project['name']).strip()[:40] or project['name']
+        self.db.execute(
+            'UPDATE learning_projects SET name=?, updated_at=? WHERE id=? AND user_id=?',
+            (title, now(), project_id, user_id),
+        )
+        self.db.execute(
+            'UPDATE knowledge_sessions SET title=? WHERE id=? AND user_id=?',
+            (title, project['session_id'], user_id),
+        )
+        return self.get_project(user_id, project_id)
+
+    def delete_project(self, user_id, project_id):
+        project = self.get_project(user_id, project_id)
+        self.db.execute('DELETE FROM learning_projects WHERE id=? AND user_id=?', (project_id, user_id))
+        try:
+            self.delete_session(user_id, project['session_id'])
+        except KeyError:
+            pass
+
+    def _sync_project_context(self, user_id, project_id):
+        project = self.get_project(user_id, project_id)
+        doc_ids = project.get('document_ids') or []
+        self.set_context(user_id, project['session_id'], doc_ids, topic=project['name'][:200])
+        self.db.execute(
+            'UPDATE learning_projects SET updated_at=? WHERE id=? AND user_id=?',
+            (now(), project_id, user_id),
+        )
+        return self.get_project(user_id, project_id)
+
+    def add_project_document(self, user_id, project_id, document_id):
+        self.get_document(user_id, document_id)
+        self.get_project(user_id, project_id)
+        ts = now()
+        self.db.execute(
+            'INSERT OR IGNORE INTO learning_project_files VALUES(?,?,?)',
+            (project_id, document_id, ts),
+        )
+        return self._sync_project_context(user_id, project_id)
+
+    def remove_project_document(self, user_id, project_id, document_id):
+        self.get_project(user_id, project_id)
+        self.db.execute(
+            'DELETE FROM learning_project_files WHERE project_id=? AND document_id=?',
+            (project_id, document_id),
+        )
+        return self._sync_project_context(user_id, project_id)
+
+    def ensure_default_project(self, user_id):
+        rows = self.list_projects(user_id)
+        if rows:
+            return rows[0]
+        return self.create_project(user_id, '默认学习')
+
     def list_sessions(self, user_id):
         return self.db.all("SELECT * FROM knowledge_sessions WHERE user_id=? ORDER BY updated_at DESC", (user_id,))
 
