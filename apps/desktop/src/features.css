@@ -28,13 +28,15 @@
 .streak-chip,.streak-banner{font-size:11px;color:var(--accent-solid,#2d6b4a)}
 .streak-banner{margin:0 0 8px;line-height:1.5}
 .bones-shop{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#f4f6ee;border:1px solid #e4e9d8}
-.hitl-panel{margin:0 0 12px;padding:12px 14px;border:1px solid var(--border,rgba(42,62,50,.11));border-radius:var(--radius,6px);background:var(--surface-elevated,#fff);display:flex;flex-direction:column;gap:8px;max-width:420px}
+.hitl-panel{margin:0 0 12px;padding:12px 14px;border:1px solid var(--border,rgba(42,62,50,.11));border-radius:var(--radius,6px);background:var(--surface-elevated,#fff);display:flex;flex-direction:column;gap:8px;max-width:420px;max-height:min(420px,48vh);overflow:auto}
+.hitl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:1;background:var(--surface-elevated,#fff)}
 .hitl-panel h3{margin:0;font-size:13px;color:var(--text,#1a1f1c)}
+.hitl-close{flex:0 0 auto;width:28px;height:28px;padding:0;border-radius:8px;background:transparent;color:#5f6660;font-size:18px;line-height:1}
 .hitl-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#6d5f4c}
 .hitl-field input,.hitl-field select,.hitl-field textarea{width:100%}
-.hitl-preview{margin:0;padding:10px 12px;font-size:12px;line-height:1.45;white-space:pre-wrap;background:#eef2e6;border-radius:8px;color:#4a5240;max-height:160px;overflow:auto}
+.hitl-preview{margin:0;padding:10px 12px;font-size:12px;line-height:1.45;white-space:pre-wrap;background:#eef2e6;border-radius:8px;color:#4a5240;max-height:none;overflow:visible}
 .hitl-field-missing span{color:#5a6b42;font-weight:600}
-.hitl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.hitl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;position:sticky;bottom:0;background:var(--surface-elevated,#fff);padding-top:8px}
 .learner-settings{display:flex;flex-direction:column;gap:10px;max-width:420px;margin:0 0 20px}
 .learner-settings label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#6d5f4c}
 .learner-settings input,.learner-settings select,.learner-settings textarea{width:100%}

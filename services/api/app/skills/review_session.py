@@ -249,8 +249,99 @@ def _sentence_facts(passages: list[dict], limit: int = 10) -> list[str]:
     return facts
 
 
+def _distractor_terms(passages: list[dict], topic: str, criteria: list[str] | None = None) -> list[str]:
+    """Other real terms from the same passages, never numbered placeholders."""
+    found: list[str] = []
+    for word in list(criteria or []) + [
+        item for passage in passages for item in re.findall(r'[\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9]{1,12}', passage.get('snippet') or '')
+    ]:
+        token = (word or '').strip()
+        if not _is_good_term(token) or token == topic or topic in token or token in topic:
+            continue
+        if token not in found:
+            found.append(token)
+        if len(found) >= 3:
+            break
+    fillers = ['文中没有的说法', '相反的条件', '无关的步骤']
+    for filler in fillers:
+        if len(found) >= 3:
+            break
+        if filler not in found:
+            found.append(filler)
+    return found[:3]
+
+
 def _deterministic_order(items: list[str], salt: str) -> list[str]:
     return sorted(items, key=lambda text: (hash(f'{salt}:{text}') % 10_000, text))
+
+
+def _text_mentions(text: str, topic: str) -> bool:
+    needle = re.sub(r'\s+', '', (topic or '')).casefold()
+    if len(needle) < 2:
+        return False
+    return needle in re.sub(r'\s+', '', text or '').casefold()
+
+
+def _passage_mentions(passage: dict, topic: str) -> bool:
+    return _text_mentions(
+        f"{passage.get('snippet') or ''} {passage.get('section') or ''} {passage.get('filename') or ''}",
+        topic,
+    )
+
+
+def _scan_chunks_for_topic(knowledge, topic: str, document_ids, limit: int) -> list[dict]:
+    found: list[dict] = []
+    docs = knowledge._scoped_ready_docs('local-user', document_ids)[:4]
+    for doc in docs:
+        for row in knowledge.document_chunks('local-user', doc['id']):
+            content = row['content'] or ''
+            section = row.get('section') or ''
+            if not _text_mentions(f'{content} {section}', topic):
+                continue
+            found.append({
+                'id': f"C{row['id']}",
+                'chunk_id': row['id'],
+                'document_id': doc['id'],
+                'filename': doc.get('filename') or '',
+                'page': row.get('page'),
+                'section': section,
+                'snippet': re.sub(r'\s+', ' ', content).strip()[:800],
+                'score': 1.0,
+            })
+            if len(found) >= limit:
+                return found
+    return found
+
+
+def _passages_about_topic(topic: str, document_ids=None, k: int = 8) -> list[dict]:
+    """Retrieve passages that actually contain the knowledge point."""
+    from ..knowledge.integration import get_knowledge
+
+    knowledge = get_knowledge()
+    hits: list[dict] = []
+    try:
+        hits = knowledge.search('local-user', topic, document_ids, k=k) or []
+    except Exception:
+        hits = []
+    anchored = [item for item in hits if _passage_mentions(item, topic)]
+    if not anchored:
+        try:
+            anchored = _scan_chunks_for_topic(knowledge, topic, document_ids, k)
+        except Exception:
+            anchored = []
+    if not anchored:
+        fallback = _knowledge_passages(topic, limit=k)
+        anchored = [item for item in fallback if _passage_mentions(item, topic)]
+    return anchored[:k]
+
+
+def _covers_topic(topic: str, question: str, options: list[dict], correct_key: str, quotes: list[str] | None = None) -> bool:
+    """Question must name the knowledge point, and the keyed evidence must contain it."""
+    if not _text_mentions(question, topic):
+        return False
+    correct = next((item.get('text') or '' for item in options if item.get('key') == correct_key), '')
+    evidence = [correct, *(quotes or [])]
+    return any(_text_mentions(part, topic) for part in evidence if part)
 
 
 def _offline_objective(
@@ -273,18 +364,33 @@ def _offline_objective(
         options = [{'key': 'A', 'text': '正确'}, {'key': 'B', 'text': '错误'}]
         return question, options, 'A', f'资料围绕「{stem}」展开，判断为正确。'
     if preferred == 'multiple_choice':
-        facts = _sentence_facts(passages, 8)
-        if len(facts) >= 3:
-            correct = max(facts, key=len)
-            distractors = [f for f in facts if f != correct][:3]
-            pool = _deterministic_order([correct, *distractors], topic)[:4]
-            while len(pool) < 4:
-                pool.append('该表述在资料中找不到明确依据')
+        facts = _sentence_facts(passages, 12)
+        on_topic = [fact for fact in facts if _text_mentions(fact, topic)]
+        if on_topic:
+            sentence = max(on_topic, key=len)
+            blanked = re.sub(re.escape(topic), '______', sentence, count=1, flags=re.I)
+            others = _distractor_terms(passages, topic, criteria)
+            if '______' in blanked and len(blanked.replace('______', '').strip()) >= 8 and others:
+                pool = _deterministic_order([topic, *others[:3]], topic)
+                keys = 'ABCD'
+                options = [{'key': keys[i], 'text': pool[i][:80]} for i in range(len(pool))]
+                correct_key = keys[pool.index(topic)]
+                question = f'根据资料，关于「{topic}」，空格应填哪一项？\n{blanked}'
+                return question, options, correct_key, sentence
+            distractors = [fact for fact in facts if fact != sentence and not _text_mentions(fact, topic)][:3]
+            while len(distractors) < 3 and others:
+                term = others[len(distractors) % len(others)]
+                claim = f'资料将「{topic}」说成「{term}」本身'
+                if claim not in distractors:
+                    distractors.append(claim)
+                else:
+                    break
+            pool = _deterministic_order([sentence, *distractors[:3]], topic)
             keys = 'ABCD'
             options = [{'key': keys[i], 'text': pool[i][:200]} for i in range(len(pool))]
-            correct_key = keys[pool.index(correct)]
-            question = f'根据所选资料，关于「{topic}」下列哪一项表述最准确？'
-            return question, options, correct_key, correct
+            correct_key = keys[pool.index(sentence)]
+            question = f'根据资料，关于「{topic}」哪一项表述正确？'
+            return question, options, correct_key, sentence
     # multiple_choice / default objective fallback
     pool = [c for c in criteria if c] or [topic, f'{topic}相关概念', '无关干扰项', '未在资料出现的说法']
     while len(pool) < 4:
@@ -308,12 +414,8 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
         topic = raw_topic
     preferred = preferred_type if preferred_type in QUESTION_TYPES else 'short_answer'
     knowledge=get_knowledge()
-    passages=knowledge.search('local-user',topic,document_ids,k=8)
-    if document_ids and not passages:
-        # Generic review topic is resolved from a complete, explicit document summary.
-        passages=knowledge.summarize_document('local-user',document_ids[0])['sources'][:8]
-    if not passages:
-        passages = _knowledge_passages(topic, limit=8)
+    # Only chunks that contain this knowledge point. Unrelated hits must not become the question.
+    passages=_passages_about_topic(topic, document_ids, k=8)
     criteria=_criteria_for_topic(topic,passages)
     reference=''
     mode='offline'
@@ -345,8 +447,9 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
                 '干扰项须来自同一主题的相近表述或常见误解，但须与资料矛盾或未被资料支持，禁止「干扰项1」等占位。'
                 '选项 text 须为完整可读的句子或短语，尽量改写自资料而非空泛概括。'
                 '主观题 options 留空；评分要点 criteria 为完整正确陈述，不要只列单词。'
-                'topic 必须是资料中的具体术语/小节名，禁止用「预测」「分析」「含义」这类空泛词。'
-                '题目要考查资料中的定义、条件、步骤、对比或可核查事实。'
+                'topic 必须沿用给定 topic，题干里写出这个知识点名称。'
+                '题目只能考查该知识点在资料中的定义、条件、步骤或事实，禁止改考同一片段里的无关句子。'
+                '正确选项必须能由包含该知识点的原文推出。'
                 'quotes 逐字摘自 sources，source_ids 与 quotes 一一对应。',
                 {'topic':topic,'preferred_type':preferred,'sources':passages})
             known={s['id']:s for s in passages}
@@ -359,6 +462,8 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
             parsed_options=[{'key':_normalize_option_key(item.key)[:1] or item.key.strip()[:1],
                              'text':item.text.strip()} for item in (result.options or [])]
             key=_normalize_option_key(result.correct_key)
+            if not _covers_topic(topic, result.question, parsed_options, key, result.quotes):
+                raise ValueError('题目未考查指定知识点。')
             if qtype in OBJECTIVE_TYPES:
                 if qtype=='true_false' and len(parsed_options)<2:
                     parsed_options=[{'key':'A','text':'正确'},{'key':'B','text':'错误'}]
@@ -377,7 +482,10 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
                  'sources':[known[sid] for sid in result.source_ids]})
             if not verdict.relevant or not verdict.supported:
                 raise ValueError('复习题参考答案未通过证据检查。')
-            topic=result.topic; question=result.question; criteria=result.criteria; reference=result.reference_answer
+            if _text_mentions(result.topic, topic) or _text_mentions(topic, result.topic):
+                if _covers_topic(result.topic, result.question, parsed_options, key, result.quotes):
+                    topic = result.topic
+            question=result.question; criteria=result.criteria; reference=result.reference_answer
             passages=[known[sid] for sid in dict.fromkeys(result.source_ids)]; mode='model'
             question_type=qtype; options=parsed_options; correct_key=key
             used_model = True
@@ -430,6 +538,144 @@ def save_review(db, review, session_id=None):
         (review['topic'],review['question'],session_id,json.dumps(review,ensure_ascii=False)))
     db.commit()
     return {'id':cursor.lastrowid,**review,'status':'waiting'}
+
+
+def stamp_quiz_items(items: list[dict]) -> list[dict]:
+    """Number a quiz set and share one batch id so later items can stay queued."""
+    from ..knowledge.storage import uid
+
+    batch = uid()
+    total = len(items)
+    stamped = []
+    for index, item in enumerate(items, start=1):
+        copy = dict(item)
+        question = copy.get('question') or ''
+        prefix = f'（第 {index}/{total} 题）'
+        if not question.startswith('（第 '):
+            copy['question'] = f'{prefix}{question}'
+        copy['quiz_index'] = index
+        copy['quiz_total'] = total
+        copy['quiz_batch'] = batch
+        stamped.append(copy)
+    return stamped
+
+
+def save_quiz_items(db, items: list[dict], session_id=None) -> list[dict]:
+    """Persist a quiz. Only the first item waits; the rest cannot swallow the next chat turn."""
+    stamped = stamp_quiz_items(items) if len(items) > 1 else [dict(item) for item in items]
+    saved = []
+    for index, item in enumerate(stamped):
+        row = save_review(db, item, session_id)
+        if index:
+            db.execute(
+                "UPDATE review_sessions SET status='queued' WHERE id=? AND status='waiting'",
+                (row['id'],),
+            )
+            db.commit()
+            row = {**row, 'status': 'queued'}
+        saved.append(row)
+    return saved
+
+
+def _snapshot_of(row) -> dict:
+    import json
+    try:
+        return json.loads(row['snapshot_json'] or '{}')
+    except Exception:
+        return {}
+
+
+def promote_queued_review(db, session_id, batch: str):
+    if not session_id or not batch:
+        return None
+    rows = db.execute(
+        "SELECT * FROM review_sessions WHERE status='queued' AND session_id=? ORDER BY id",
+        (session_id,),
+    ).fetchall()
+    for row in rows:
+        snap = _snapshot_of(row)
+        if snap.get('quiz_batch') != batch:
+            continue
+        updated = db.execute(
+            "UPDATE review_sessions SET status='waiting' WHERE id=? AND status='queued'",
+            (row['id'],),
+        )
+        db.commit()
+        if updated.rowcount != 1:
+            return None
+        snap['id'] = row['id']
+        snap['status'] = 'waiting'
+        return public_review(snap)
+    return None
+
+
+def quiz_batch_summary(db, session_id, batch: str) -> str:
+    if not session_id or not batch:
+        return ''
+    rows = db.execute(
+        "SELECT status, snapshot_json FROM review_sessions WHERE session_id=? ORDER BY id DESC LIMIT 20",
+        (session_id,),
+    ).fetchall()
+    matched = [row['status'] for row in rows if _snapshot_of(row).get('quiz_batch') == batch]
+    if not matched:
+        return ''
+    correct = sum(1 for status in matched if status == 'correct')
+    total = len(matched)
+    closing = f'这组小测结束：答对 {correct}/{total}。'
+    if correct < total:
+        closing += '可以说「薄弱点回顾」再练错过的知识点。'
+    return closing
+
+
+def continue_quiz(db, session_id, review_id: int):
+    """After the current card is finished, show the next queued item or the batch score."""
+    row = db.execute('SELECT snapshot_json FROM review_sessions WHERE id=?', (review_id,)).fetchone()
+    batch = _snapshot_of(row).get('quiz_batch') if row else None
+    if not batch:
+        return None, ''
+    nxt = promote_queued_review(db, session_id, batch)
+    if nxt:
+        return nxt, ''
+    return None, quiz_batch_summary(db, session_id, batch)
+
+
+def recent_missed_topics(limit: int = 4) -> list[str]:
+    """Topics the learner recently missed, newest first."""
+    from ..database import store
+
+    found: list[str] = []
+    try:
+        with store.connect() as db:
+            rows = db.execute(
+                "SELECT topic, status FROM review_sessions "
+                "WHERE status IN ('needs_review','partial') ORDER BY id DESC LIMIT 40"
+            ).fetchall()
+    except Exception:
+        return []
+    for row in rows:
+        topic = (row['topic'] or '').strip()
+        if not topic or topic in _GENERIC_TOPICS or topic in found:
+            continue
+        found.append(topic)
+        if len(found) >= limit:
+            break
+    return found
+
+
+def focus_checkin_question(title: str) -> dict | None:
+    """One multiple-choice item about the task that was just checked in, if the materials mention it."""
+    title = (title or '').strip()
+    if not title:
+        return None
+    topic = title if _is_good_term(title) else resolve_topic(title)
+    if not _passages_about_topic(topic, None, k=2):
+        return None
+    review = begin_review(topic, preferred_type='multiple_choice')
+    if review.get('question_type') != 'multiple_choice' or not review.get('options'):
+        return None
+    if not _text_mentions(review.get('question') or '', review.get('topic') or topic):
+        return None
+    return review
 
 
 def public_review(review):
@@ -722,7 +968,8 @@ def evaluate_review(topic: str, answer: str, snapshot=None) -> dict:
 def _is_vague_waiting(topic: str, question: str) -> bool:
     topic = (topic or '').strip()
     question = (question or '').strip()
-    if topic in _GENERIC_TOPICS or len(topic) <= 2:
+    # Short technical names (金叉, MACD) are real topics; only drop empty labels.
+    if topic in _GENERIC_TOPICS or len(topic) <= 1:
         return True
     if _GENERIC_QUESTION.search(question):
         return True
@@ -731,6 +978,8 @@ def _is_vague_waiting(topic: str, question: str) -> bool:
 
 def repair_vague_waiting_reviews() -> None:
     """Replace waiting reviews that used generic topics / template stems with grounded ones."""
+    import json
+
     from ..database import store
 
     with store.connect() as db:
@@ -741,13 +990,18 @@ def repair_vague_waiting_reviews() -> None:
         for row in rows:
             topic = row['topic'] or ''
             question = row['question'] or ''
+            try:
+                snap = json.loads(row['snapshot_json'] or '{}')
+            except Exception:
+                snap = {}
+            if snap.get('question_type') == 'multiple_choice' and snap.get('options'):
+                continue
             if not _is_vague_waiting(topic, question):
                 continue
             try:
-                refreshed = begin_review('今日重点', preferred_type='short_answer')
+                refreshed = begin_review('今日重点', preferred_type='multiple_choice')
             except Exception:
                 refreshed = None
-            import json
             if refreshed and not _is_vague_waiting(refreshed.get('topic') or '', refreshed.get('question') or ''):
                 db.execute(
                     "UPDATE review_sessions SET topic=?, question=?, snapshot_json=? WHERE id=? AND status='waiting'",
@@ -782,10 +1036,10 @@ def review_warmup_brief(topic: str, document_ids=None) -> str:
 
     knowledge = get_knowledge()
     resolved = resolve_topic((topic or '').strip() or '今日重点')
-    passages = knowledge.search('local-user', resolved, document_ids, k=6)
-    if not passages:
-        passages = _knowledge_passages(resolved, limit=6)
-    ranked = _knowledge_topics(8)
+    passages = _passages_about_topic(resolved, document_ids, k=6)
+    ranked = [item for item in _knowledge_topics(8) if any(_passage_mentions(p, item) for p in passages)]
+    if resolved not in ranked and any(_passage_mentions(p, resolved) for p in passages):
+        ranked = [resolved, *ranked]
     if not passages and not ranked:
         return '上传资料后，我可以根据文档要点带你复习。'
     if not passages:
@@ -807,7 +1061,12 @@ def review_warmup_brief(topic: str, document_ids=None) -> str:
             {'topic': resolved, 'sources': passages},
         )
         lines = [result.intro.strip(), *[f'· {item.strip()}' for item in result.bullets if item.strip()]]
-        return '【复习要点】\n' + '\n'.join(lines)
+        brief = '【复习要点】\n' + '\n'.join(lines)
+        focus = ranked[:4] or [resolved]
+        if focus and not any(_text_mentions(brief, point) for point in focus):
+            keys = '、'.join(focus[:5])
+            return f'【复习要点】本次只围绕这些资料知识点：{keys}。'
+        return brief
     except Exception:
         fname = (passages[0].get('filename') or '资料').strip()
         keys = ranked[:5] or [resolved]
@@ -824,6 +1083,33 @@ def compose_review_message(brief: str, question: str) -> str:
     return f'{brief}\n\n{question}'
 
 
+def warmup_for_reviews(items: list[dict] | None) -> str:
+    """Knowledge points actually used by the questions, not a separate summary."""
+    points: list[str] = []
+    for item in items or []:
+        topic = (item.get('topic') or '').strip()
+        if not topic or topic in _GENERIC_TOPICS or topic in points:
+            continue
+        points.append(topic)
+    if not points:
+        return ''
+    lines = ['本次题目只考查下面这些资料知识点：', *[f'· {point}' for point in points[:6]]]
+    return '【复习要点】\n' + '\n'.join(lines)
+
+
+def _topics_with_evidence(candidates: list[str], document_ids, limit: int) -> list[str]:
+    chosen: list[str] = []
+    for topic in candidates:
+        topic = (topic or '').strip()
+        if not topic or topic in chosen:
+            continue
+        if _passages_about_topic(topic, document_ids, k=2):
+            chosen.append(topic)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
 def daily_quiz(
     topics: list[str] | None = None,
     limit: int = 3,
@@ -834,15 +1120,18 @@ def daily_quiz(
 ) -> dict:
     limit = max(1, min(limit, 5))
     rotation = _DIFFICULTY_ROTATION.get(difficulty, QUESTION_TYPES)
-    material = _knowledge_topics(limit)
+    material = _knowledge_topics(max(limit * 3, limit))
     if topics:
-        chosen = [resolve_topic(t) for t in topics if t and t.strip()][:limit]
+        seeds = [resolve_topic(t) for t in topics if t and t.strip()]
     elif material:
-        chosen = material[:limit]
+        seeds = material
     else:
-        chosen = list(QUESTIONS.keys())[:limit]
+        seeds = list(QUESTIONS.keys())
+    missed = [topic for topic in recent_missed_topics(limit) if topic not in seeds]
+    seeds = [*missed, *seeds]
+    chosen = _topics_with_evidence(seeds, document_ids, limit)
     if not chosen:
-        chosen = ['今日重点']
+        chosen = (seeds or ['今日重点'])[:limit]
     items = []
     for index, topic in enumerate(chosen):
         if multiple_choice_only:
@@ -856,7 +1145,7 @@ def daily_quiz(
         'count': len(items),
         'items': items,
         'difficulty': difficulty,
-        'instruction': '逐题作答；题型按难度与资料考点生成，有知识库时只按资料给分。',
+        'instruction': '逐题作答。每组只显示当前这一题，答完或说「下一题」再继续。',
     }
 
 

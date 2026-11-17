@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { api } from '../knowledge';
+import { conversation } from '../chatStore';
 
 export type FocusStatus = {
   id: number | null;
@@ -23,6 +24,13 @@ export type FocusFinishResult = {
     bones_earned?: number;
     streak?: { bones?: number; feed_cost?: number };
   } | null;
+  followup_review?: {
+    id?: number;
+    question?: string;
+    topic?: string;
+    question_type?: string;
+    options?: { key: string; text: string }[];
+  };
   streak?: { bones?: number; feed_cost?: number };
 };
 
@@ -56,7 +64,9 @@ export function useFocusReminder(handlers: {
         finishing.current = true;
         handled.current.add(id);
         try {
-          const finish = await fetch(`${api}/focus/${id}/finish`, { method: 'POST' });
+          const sid = conversation.getSnapshot().sessionId;
+          const query = sid ? `?chat_session=${encodeURIComponent(sid)}` : '';
+          const finish = await fetch(`${api}/focus/${id}/finish${query}`, { method: 'POST' });
           if (cancelled) return;
           // 404 means another path (e.g. early finish) already closed the session.
           if (finish.ok) {

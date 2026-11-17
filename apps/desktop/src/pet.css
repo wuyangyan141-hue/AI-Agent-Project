@@ -69,8 +69,8 @@ html,body,#root{width:100%;height:100%;margin:0;background:transparent;overflow:
 .pet-chat-line.user{align-self:flex-end;background:#e8efdc;color:#4d6147}
 .pet-chat-line.assistant{align-self:flex-start;background:#fff;border:1px solid #ebe6d8;color:#6d5f4c}
 .pet-chat-form{display:flex;gap:6px;align-items:center;flex:0 0 auto}
-.pet-chat-form input{flex:1 1 auto;min-width:0;border:1px solid #e1dccb;border-radius:10px;background:#fffefa;color:#5d6450;padding:8px 10px;font-size:12px;outline:none}
-.pet-chat-form input:focus{border-color:#b7c39a}
+.pet-chat-form input{flex:1 1 auto;min-width:0;border:1px solid #e1dccb;border-radius:10px;background:#fff;color:#5d6450;padding:8px 10px;font-size:12px;outline:none}
+.pet-chat-form input:focus{border-color:#b7c39a;background:#fff}
 .pet-chat-form input:disabled{opacity:.6}
 .pet-chat-form button{flex:0 0 auto;border:0;border-radius:10px;background:#7f9164;color:#fff;padding:8px 12px;font-size:12px;cursor:pointer}
 .pet-chat-form button:hover:not(:disabled){background:#6a7d52}

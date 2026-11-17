@@ -148,15 +148,27 @@ export function usePetSocket() {
     setActiveCheckIn(null);
     setOfferReview(Boolean(result.task_id) || Boolean(result.offer_review));
     applyExternalStatus('talking', speech.split('\n')[0].slice(0, 40));
-    conversation.setMessages((msgs) => [
-      ...msgs,
-      {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: speech,
-        metadata: { mode: 'task_reward', offer_review: true },
-      },
-    ]);
+    conversation.setMessages((msgs) => {
+      const next = [
+        ...msgs,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: speech,
+          metadata: { mode: 'task_reward' as const, offer_review: !result.followup_review?.question },
+        },
+      ];
+      const follow = result.followup_review;
+      if (follow?.question) {
+        next.push({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: follow.question,
+          metadata: { mode: 'review_question', review: follow },
+        });
+      }
+      return next;
+    });
   }
 
   useFocusReminder({
@@ -262,7 +274,9 @@ export function usePetSocket() {
     const session = activeCheckIn;
     if (!session?.id) return false;
     try {
-      const result = await request<FocusFinishResult>(`/focus/${session.id}/finish`, { method: 'POST' });
+      const sid = conversation.getSnapshot().sessionId;
+      const query = sid ? `?chat_session=${encodeURIComponent(sid)}` : '';
+      const result = await request<FocusFinishResult>(`/focus/${session.id}/finish${query}`, { method: 'POST' });
       applyCheckInReward({ ...result, task_id: result.task_id ?? session.task_id });
       return true;
     } catch (error) {

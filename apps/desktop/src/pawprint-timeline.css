@@ -15,7 +15,11 @@
 
 .pp-care-panel--docked {
   margin: 0;
-  max-height: min(220px, 32vh);
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   border-color: rgba(111, 162, 135, 0.35);
@@ -23,10 +27,9 @@
 }
 
 .pp-care-panel--docked .pp-care-timeline {
-  overflow-y: auto;
-  max-height: 140px;
-  flex: 1;
-  min-height: 0;
+  overflow: visible;
+  max-height: none;
+  flex: 0 0 auto;
 }
 
 .pp-care-head-actions {

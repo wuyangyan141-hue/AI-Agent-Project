@@ -79,7 +79,9 @@ def normalize_utterance(text: str) -> str:
     return cleaned
 
 
-SKIP_REVIEW = re.compile(r'跳过(这题|本题|复习)?|取消复习|先不答|下次再答')
+SKIP_REVIEW = re.compile(
+    r'跳过(这题|本题|复习)?|取消复习|先不答|下次再答|下一题|下一道|换一题|继续下一题'
+)
 # Short give-ups / ask-for-key while a review is waiting — reveal the answer, don't RAG.
 GIVE_UP_REVIEW = re.compile(
     r'^\s*(?:'

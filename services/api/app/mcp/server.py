@@ -94,16 +94,14 @@ def start_review_question(topic: str, question_type: str = 'multiple_choice') ->
 @mcp.tool()
 def generate_quiz_from_documents(topic: str, count: int = 3, question_type: str = 'multiple_choice') -> dict:
     """Generate several quiz items from uploaded materials via the LLM (falls back to passage-based options offline)."""
-    from ..skills.review_session import QUESTION_TYPES, begin_review, public_review, save_review
+    from ..skills.review_session import QUESTION_TYPES, begin_review, public_review, save_quiz_items
 
     preferred = question_type if question_type in QUESTION_TYPES else 'multiple_choice'
     count = min(max(int(count), 1), 5)
-    items = []
+    drafted = [begin_review(topic, preferred_type=preferred) for _ in range(count)]
     with store.connect() as db:
-        for _ in range(count):
-            review = begin_review(topic, preferred_type=preferred)
-            items.append(public_review(save_review(db, review)))
-    return {'topic': topic, 'question_type': preferred, 'questions': items}
+        saved = save_quiz_items(db, drafted)
+    return {'topic': topic, 'question_type': preferred, 'questions': [public_review(item) for item in saved]}
 
 @mcp.tool()
 def write_review_result(review_id: int, answer: str) -> dict:

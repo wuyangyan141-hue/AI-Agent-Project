@@ -67,7 +67,12 @@ export function HitlPanel({ schema, kind, disabled, onSubmit, onCancel }: Props)
 
   return (
     <form className="hitl-panel" onSubmit={handleSubmit} aria-label={schema.title}>
-      <h3>{schema.title}</h3>
+      <div className="hitl-head">
+        <h3>{schema.title}</h3>
+        <button type="button" className="hitl-close" aria-label="关闭" onClick={onCancel}>
+          ×
+        </button>
+      </div>
       {kind === 'plan_revise' && schema.preview ? (
         <pre className="hitl-preview" aria-label="计划预览">
           {schema.preview}
@@ -141,7 +146,7 @@ export function HitlPanel({ schema, kind, disabled, onSubmit, onCancel }: Props)
             就用这版
           </PawprintButton>
         ) : null}
-        <PawprintButton type="button" variant="quiet" disabled={disabled} onClick={onCancel}>
+        <PawprintButton type="button" variant="quiet" onClick={onCancel}>
           取消
         </PawprintButton>
       </div>

@@ -17,7 +17,7 @@ type Props = {
   onSelectTab: (tab: PanelTab) => void;
   onSelectProject: (project: LearningProject) => void;
   onCreateProject: () => void;
-  onRenameProject: (project: LearningProject) => void;
+  onRenameProject: (project: LearningProject, name: string) => void | Promise<void>;
   onDeleteProject: (project: LearningProject) => void;
   onAttachFile: (projectId: string, documentId: string) => void;
   onDetachFile: (projectId: string, documentId: string) => void;
@@ -55,8 +55,30 @@ export function ProjectSidebar({
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [addFor, setAddFor] = useState<string | null>(null);
   const [editFor, setEditFor] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
+
+  function beginRename(project: LearningProject) {
+    setEditFor(null);
+    setAddFor(null);
+    setPickerFor(null);
+    setRenamingId(project.id);
+    setRenameDraft(project.name);
+    window.setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 0);
+  }
+
+  async function commitRename(project: LearningProject) {
+    const next = renameDraft.trim().slice(0, 40);
+    setRenamingId(null);
+    if (!next || next === project.name) return;
+    await onRenameProject(project, next);
+  }
 
   const readyDocs = useMemo(
     () => documents.filter((d) => d.status === 'ready' && !d.needs_reindex),
@@ -114,23 +136,59 @@ export function ProjectSidebar({
                 className={`project-node${isActive ? ' is-active' : ''}${open ? ' is-open' : ''}`}
               >
                 <div className="tree-folder-row">
-                  <button
-                    type="button"
-                    className="tree-folder-main"
-                    aria-expanded={open}
-                    title={project.name}
-                    onClick={() => activateFolder(project)}
-                  >
-                    {open ? (
-                      <span className="tree-chevron is-expanded" aria-hidden="true" />
-                    ) : (
-                      <span className="tree-glyph tree-glyph-folder" aria-hidden="true" />
-                    )}
-                    <span className="tree-folder-label">{project.name}</span>
-                    {project.files.length > 0 && !open ? (
-                      <span className="tree-folder-meta">{project.files.length}</span>
-                    ) : null}
-                  </button>
+                  {renamingId === project.id ? (
+                    <div className="tree-folder-main tree-folder-main--rename">
+                      {open ? (
+                        <span className="tree-chevron is-expanded" aria-hidden="true" />
+                      ) : (
+                        <span className="tree-glyph tree-glyph-folder" aria-hidden="true" />
+                      )}
+                      <input
+                        ref={renameInputRef}
+                        className="tree-rename-input"
+                        aria-label="学习夹名称"
+                        maxLength={40}
+                        value={renameDraft}
+                        disabled={busy}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={() => void commitRename(project)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void commitRename(project);
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setRenamingId(null);
+                            setRenameDraft(project.name);
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="tree-folder-main"
+                      aria-expanded={open}
+                      title={`${project.name}（双击重命名）`}
+                      onClick={() => activateFolder(project)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        beginRename(project);
+                      }}
+                    >
+                      {open ? (
+                        <span className="tree-chevron is-expanded" aria-hidden="true" />
+                      ) : (
+                        <span className="tree-glyph tree-glyph-folder" aria-hidden="true" />
+                      )}
+                      <span className="tree-folder-label">{project.name}</span>
+                      {project.files.length > 0 && !open ? (
+                        <span className="tree-folder-meta">{project.files.length}</span>
+                      ) : null}
+                    </button>
+                  )}
                   <div className="tree-row-actions">
                     <button
                       type="button"
@@ -138,7 +196,7 @@ export function ProjectSidebar({
                       title="编辑学习夹"
                       aria-label={`编辑 ${project.name}`}
                       aria-expanded={editFor === project.id}
-                      disabled={busy}
+                      disabled={busy || renamingId === project.id}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!open) setExpanded((prev) => ({ ...prev, [project.id]: true }));
@@ -155,7 +213,7 @@ export function ProjectSidebar({
                       title="添加文件"
                       aria-label={`向 ${project.name} 添加文件`}
                       aria-expanded={addFor === project.id}
-                      disabled={busy}
+                      disabled={busy || renamingId === project.id}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!open) setExpanded((prev) => ({ ...prev, [project.id]: true }));
@@ -198,10 +256,7 @@ export function ProjectSidebar({
                           type="button"
                           className="sidebar-link-btn"
                           disabled={busy}
-                          onClick={() => {
-                            setEditFor(null);
-                            onRenameProject(project);
-                          }}
+                          onClick={() => beginRename(project)}
                         >
                           重命名
                         </button>

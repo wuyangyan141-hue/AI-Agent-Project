@@ -20,7 +20,7 @@ type Props = {
   sendText: (text: string) => void;
   setSource: (s: Source) => void;
   draft: PlanDraft | null;
-  setDraft: React.Dispatch<React.SetStateAction<PlanDraft | null>>;
+  setDraft: (next: PlanDraft | null) => void;
   confirmDraft: () => void;
 };
 

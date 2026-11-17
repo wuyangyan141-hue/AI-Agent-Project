@@ -31,7 +31,7 @@ export function createConversationStore(port?: Port, disk?: Disk) {
   try {
     const saved = JSON.parse(disk?.getItem(KEY) || 'null');
     if (saved && Array.isArray(saved.messages) && typeof saved.scope === 'string' && typeof saved.revision === 'number') {
-      state = { ...empty(), ...saved, pending: null };
+      state = { ...empty(), ...saved, pending: null, pendingHitl: null };
     }
   } catch { /* invalid local cache */ }
   function update(change: Partial<ConversationState> | ((current: ConversationState) => Partial<ConversationState>)) {

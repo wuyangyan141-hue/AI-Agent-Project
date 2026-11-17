@@ -19,6 +19,7 @@ from .skills.review_session import (
     public_review,
     review_warmup_brief,
     save_review,
+    warmup_for_reviews,
     weak_point_review,
     grade_saved_review,
 )
@@ -37,8 +38,24 @@ from .runtime_llm import apply_runtime, public_config, save_config
 logger = logging.getLogger(__name__)
 
 
-def review_chat_answer(topic: str, document_ids, question: str) -> str:
-    return compose_review_message(review_warmup_brief(topic, document_ids), question)
+def review_chat_answer(topic: str, document_ids, question: str, reviews: list | None = None) -> str:
+    brief = warmup_for_reviews(reviews or [{'topic': topic}])
+    if not brief:
+        brief = review_warmup_brief(topic, document_ids)
+    return compose_review_message(brief, question)
+
+
+def _after_review_card(session_id: str, review_id: int, lead: str) -> tuple[str, dict]:
+    """Attach the next queued question, or the batch score, after this card is done."""
+    from .skills.review_session import continue_quiz
+
+    with store.connect() as db:
+        nxt, summary = continue_quiz(db, session_id, review_id)
+    if nxt:
+        return f'{lead}\n\n{nxt["question"]}', {'review': nxt, 'mode': 'review_question'}
+    if summary:
+        return f'{lead}\n\n{summary}', {'mode': 'review_feedback'}
+    return lead, {'mode': 'review_feedback'}
 
 
 @asynccontextmanager
@@ -442,7 +459,7 @@ def get_focus() -> dict:
         return store.focus_status(db) or {'remaining_seconds': 0, 'id': None}
 
 @app.post('/focus/{session_id}/finish')
-def stop_focus(session_id: int) -> dict:
+def stop_focus(session_id: int, chat_session: str | None = None) -> dict:
     """End focus; if linked to a task, mark it done and award bones once."""
     with store.connect() as db:
         status = store.focus_status(db)
@@ -461,11 +478,21 @@ def stop_focus(session_id: int) -> dict:
                 reward = task.get('reward')
     streak = mark_study_activity(max(1, int(round(minutes))) if minutes else 0)
     step = next_step('focus')
+    follow = None
+    if task_id is not None and chat_session and re.fullmatch(r'[a-f0-9]{32}', chat_session):
+        try:
+            from .skills.review_session import focus_checkin_question, public_review, save_review
+            drafted = focus_checkin_question(task_title or '')
+            if drafted:
+                with store.connect() as db:
+                    follow = public_review(save_review(db, drafted, chat_session))
+        except Exception:
+            logger.exception('Focus follow-up question failed')
     speech = (reward or {}).get('speech') if reward else None
     if not speech and task_id is not None:
         short = (task_title or '这项任务')[:18]
         speech = f'汪！「{short}」打卡完成，骨头到手啦～'
-    if speech and task_id is not None:
+    if speech and task_id is not None and follow is None:
         speech = f'{speech}\n要不要出一题巩固一下？'
     return {
         'id': session_id,
@@ -475,6 +502,7 @@ def stop_focus(session_id: int) -> dict:
         'reward': reward,
         'speech': speech,
         'offer_review': bool(task_id is not None),
+        'followup_review': follow,
         'streak': streak,
         'next_step': step,
     }
@@ -485,8 +513,7 @@ def review_scope(item):
 
 @app.post('/reviews',status_code=201)
 def start_review(item: ReviewInput):
-    # Single review defaults to short answer; daily quiz rotates objective/subjective types.
-    review=begin_review(item.topic,document_ids=review_scope(item),preferred_type='short_answer')
+    review = begin_review(item.topic, document_ids=review_scope(item), preferred_type='multiple_choice')
     with store.connect() as db:
         return public_review(save_review(db,review,item.session_id))
 
@@ -496,8 +523,10 @@ def start_daily_quiz(item: ReviewScope | None = None):
     scope_ids = review_scope(item)
     quiz = daily_quiz(document_ids=scope_ids)
     warmup = review_warmup_brief('今日重点', scope_ids)
+    from .skills.review_session import save_quiz_items
+
     with store.connect() as db:
-        created = [public_review(save_review(db, q, item.session_id)) for q in quiz['items']]
+        created = [public_review(item) for item in save_quiz_items(db, quiz['items'], item.session_id)]
     return {**quiz, 'warmup': warmup, 'items': created, 'next_step': next_step('review')}
 
 @app.post('/reviews/weak-point',status_code=201)
@@ -506,19 +535,27 @@ def start_weak_point(item: ReviewScope | None = None):
     with store.connect() as db:
         rows=[dict(row) for row in db.execute('SELECT topic,status FROM review_sessions WHERE session_id IS ? ORDER BY id DESC LIMIT 20',(item.session_id,))]
     picked=weak_point_review(rows)
-    review=begin_review(picked['topic'],document_ids=review_scope(item))
+    review=begin_review(picked['topic'],document_ids=review_scope(item),preferred_type='multiple_choice')
     with store.connect() as db:
         saved=public_review(save_review(db,review,item.session_id))
     return {**saved,'next_step':next_step('review')}
 
 @app.post('/reviews/{review_id}/answer')
-def answer_review(review_id: int,item: ReviewAnswer):
+def answer_review(review_id: int, item: ReviewAnswer):
     try:
         with store.connect() as db:
-            result=grade_saved_review(db,review_id,item.answer)
+            result = grade_saved_review(db, review_id, item.answer)
+            from .skills.review_session import continue_quiz
+            row = db.execute('SELECT session_id FROM review_sessions WHERE id=?', (review_id,)).fetchone()
+            nxt, summary = continue_quiz(db, row['session_id'] if row else None, review_id)
     except ValueError as exc:
-        raise HTTPException(409,str(exc)) from exc
-    return {**result,'streak':mark_study_activity(0),'next_step':next_step('review')}
+        raise HTTPException(409, str(exc)) from exc
+    payload = {**result, 'streak': mark_study_activity(0), 'next_step': next_step('review')}
+    if nxt:
+        payload['next_review'] = nxt
+    elif summary:
+        payload['feedback'] = f"{result['feedback']}\n\n{summary}"
+    return payload
 
 @app.get('/learning/next-step')
 def learning_next_step(after: str | None = None) -> dict:
@@ -668,7 +705,7 @@ async def chat(websocket: WebSocket):
                             saved = knowledge.record_exchange(
                                 'local-user',
                                 '',
-                                review_chat_answer(quiz_topic, ids, first['question']),
+                                review_chat_answer(quiz_topic, ids, first['question'], created),
                                 session_id,
                                 {'review': first, 'quiz': created, 'mode': 'review_question'},
                             )
@@ -803,14 +840,21 @@ async def chat(websocket: WebSocket):
                     logger.exception('Preference inference failed')
                 if decision.kind=='skip' and waiting:
                     with store.connect() as db:
-                        db.execute("UPDATE review_sessions SET status='skipped',feedback='用户跳过本题' WHERE id=?",(waiting['id'],));db.commit()
-                    saved=knowledge.record_exchange('local-user',text,'好，这题先跳过。',session_id,{'review':{'id':waiting['id'],'status':'skipped'}})
+                        db.execute("UPDATE review_sessions SET status='skipped',feedback='用户跳过本题' WHERE id=?",(waiting['id'],))
+                        db.commit()
+                    follow_text, follow_meta = _after_review_card(session_id, waiting['id'], '好，这题先跳过。')
+                    saved=knowledge.record_exchange('local-user', text, follow_text, session_id, follow_meta)
                 elif decision.kind=='review_answer' and waiting:
                     await emit('tool','正在根据出题时的资料核对答案')
                     def grade():
                         with store.connect() as db: return grade_saved_review(db,waiting['id'],text)
                     result=await with_progress(run_in_threadpool(grade),emit,'正在逐项核对评分要点')
-                    saved=knowledge.record_exchange('local-user',text,result['feedback'],session_id,{'review':result,'sources':result['sources'],'mode':'review_feedback','streak':mark_study_activity(0)})
+                    follow_text, follow_meta = _after_review_card(session_id, waiting['id'], result['feedback'])
+                    if follow_meta.get('mode') == 'review_feedback':
+                        follow_meta = {**follow_meta, 'review': result, 'streak': mark_study_activity(0)}
+                    else:
+                        follow_meta = {**follow_meta, 'streak': mark_study_activity(0)}
+                    saved=knowledge.record_exchange('local-user', text, follow_text, session_id, follow_meta)
                 elif decision.kind in {'command','plan_followup'} and intent.action in {'plan','replan'}:
                     if intent.action=='plan' and not intent.goal.strip():
                         ready_docs=[d for d in knowledge.list_documents('local-user') if d['status']=='ready' and not d['needs_reindex']]
@@ -901,13 +945,17 @@ async def chat(websocket: WebSocket):
                             session_id, {'mode': 'check_in_idle'},
                         )
                     else:
-                        result=stop_focus(int(status['id']))
+                        result=stop_focus(int(status['id']), chat_session=session_id)
                         speech=(result.get('speech') or '打卡完成，骨头到手啦～').strip()
+                        follow = result.get('followup_review') or {}
+                        if follow.get('question'):
+                            speech = f"{speech}\n\n{follow['question']}"
                         saved=knowledge.record_exchange(
                             'local-user', text, speech, session_id,
                             {
-                                'mode': 'task_reward',
-                                'offer_review': bool(result.get('offer_review')),
+                                'mode': 'review_question' if follow.get('question') else 'task_reward',
+                                'offer_review': bool(result.get('offer_review')) and not follow.get('question'),
+                                'review': follow or None,
                                 'reward': result.get('reward'),
                                 'focus_finish': result,
                                 'today_task_id': result.get('task_id'),
@@ -916,11 +964,11 @@ async def chat(websocket: WebSocket):
                 elif decision.kind=='command' and intent.action in {'review','quiz','weak'}:
                     tool_label = '正在生成今日小测（选择题）' if intent.action == 'quiz' else '正在整理资料要点并准备复习题'
                     await emit('tool', tool_label)
-                    preferred='multiple_choice' if intent.action=='quiz' else ('short_answer' if intent.action=='review' else 'true_false')
+                    preferred='multiple_choice'
                     with store.connect() as db:
                         db.execute(
                             "UPDATE review_sessions SET status='skipped', feedback='用户开始新题，自动跳过未答题' "
-                            "WHERE status='waiting' AND session_id=?",
+                            "WHERE status IN ('waiting','queued') AND session_id=?",
                             (session_id,),
                         )
                         db.commit()
@@ -950,7 +998,7 @@ async def chat(websocket: WebSocket):
                             saved = knowledge.record_exchange(
                                 'local-user',
                                 text,
-                                review_chat_answer(quiz_topic, ids, first['question']),
+                                review_chat_answer(quiz_topic, ids, first['question'], created),
                                 session_id,
                                 {'review': first, 'quiz': created, 'mode': 'review_question'},
                             )
@@ -975,7 +1023,7 @@ async def chat(websocket: WebSocket):
                             return [begin_review(topic, document_ids=ids, preferred_type=preferred)]
                         reviews = await with_progress(run_in_threadpool(prepare), emit, '正在生成带资料依据的复习题')
                         with store.connect() as db:
-                            created = [save_review(db, item, session_id) for item in reviews]
+                            created = save_quiz_items(db, reviews, session_id)
                         first = public_review(created[0])
                         review_topic = intent.topic or (first.get('topic') if isinstance(first, dict) else None) or '今日重点'
                         if intent.action == 'weak':
@@ -983,7 +1031,7 @@ async def chat(websocket: WebSocket):
                         saved = knowledge.record_exchange(
                             'local-user',
                             text,
-                            review_chat_answer(review_topic, ids, first['question']),
+                            review_chat_answer(review_topic, ids, first['question'], created),
                             session_id,
                             {
                                 'review': first,

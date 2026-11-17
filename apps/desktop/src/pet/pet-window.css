@@ -185,15 +185,14 @@ html.bone-cursor-on input{cursor:text!important}
 .pet-chat-form textarea{
   flex:1 1 auto;min-width:0;resize:none;min-height:28px;max-height:52px;
   border:1px solid rgba(180,170,150,.45);border-radius:10px;
-  background:rgba(255,253,248,.28);color:#5d6450;
-  backdrop-filter:blur(2px);
+  background:#fff;color:#5d6450;
   padding:6px 8px;font:inherit;font-size:11px;line-height:1.35;outline:none;
   overflow:auto;
 }
 .pet-chat-form textarea::placeholder{color:rgba(109,95,76,.55)}
 .pet-chat-form textarea:focus{
   border-color:rgba(155,170,120,.75);
-  background:rgba(255,253,248,.42);
+  background:#fff;
 }
 .pet-chat-form textarea:disabled{opacity:.55}
 .pet-chat-actions{display:flex;gap:6px;flex:0 0 auto}
@@ -339,16 +338,24 @@ html.bone-cursor-on input{cursor:text!important}
   -webkit-app-region:no-drag;
   position:relative;z-index:4;
   width:min(100%,232px);
+  max-height:min(280px,46vh);
+  overflow:auto;
   margin:0 auto 6px;
 }
 .pet-hitl-wrap .hitl-panel{
   max-width:100%;
+  max-height:none;
   margin:0;
   padding:10px;
   font-size:11px;
   border-color:#d7dec6;
   background:#f5f7ef;
   box-shadow:0 8px 20px #5d64501a;
+  overflow:visible;
+}
+.pet-hitl-wrap .hitl-preview{
+  max-height:none;
+  overflow:visible;
 }
 .pet-hitl-wrap .hitl-panel h3{font-size:12px}
 .pet-hitl-wrap .hitl-field{font-size:11px}

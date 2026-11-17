@@ -7,7 +7,7 @@ from langgraph.types import interrupt
 
 from ..agent.intent import StudyIntent
 from ..database import store
-from ..skills.review_session import daily_quiz, public_review, save_review
+from ..skills.review_session import daily_quiz, public_review, save_quiz_items
 from .parse import (
     parse_plan_utterance,
     parse_quiz_utterance,
@@ -53,7 +53,7 @@ def quiz_run(state: CompanionState) -> CompanionState:
         difficulty=str(params.get('difficulty') or 'standard'),
     )
     with store.connect() as db:
-        created = [save_review(db, q, session_id) for q in quiz['items']]
+        created = save_quiz_items(db, quiz['items'], session_id)
     first = public_review(created[0]) if created else {}
     return {
         **state,
