@@ -22,7 +22,14 @@ _GENERIC_TOPICS = _VAGUE | {
     '指标', '信号', '交易', '策略', '系统', '数据', '结果', '情况', '方式', '过程', '条件',
     '例子', '示例', '总结', '概述', '引言', '目录', '前言', '附录', '第一章', '第二章',
     '学习', '复习题', '题目', '答案', '要点', '定义', '简介', '背景', '应用', '原理',
+    # Weak OCR / slide chrome from DSAI lecture decks — not knowledge points.
+    'Chapter', 'DSAI5205', 'DSAI', 'Introduction', 'Artificial', 'Intelligence',
+    'Sem', 'Department', 'solution', 'state', 'algorithm', 'Fitness', 'Search',
 }
+_SLIDE_NOISE = re.compile(
+    r'^(?:chapter|dsai\d*|introduction|artificial|intelligence|sem|department|fitness|search|solution|state|algorithm)$',
+    re.I,
+)
 _BUILTIN_TOPICS = set(QUESTIONS)
 _TYPE_LABELS = {
     'short_answer': '简答',
@@ -39,6 +46,8 @@ _GENERIC_QUESTION = re.compile(
 def _is_good_term(word: str) -> bool:
     token = (word or '').strip()
     if not token or token in _GENERIC_TOPICS or token in _BUILTIN_TOPICS:
+        return False
+    if _SLIDE_NOISE.fullmatch(token):
         return False
     if re.fullmatch(r'\d+', token):
         return False
@@ -78,8 +87,7 @@ def _filename_topic(filename: str) -> str:
     return stem[:40]
 
 
-def _knowledge_topics(limit: int = 6) -> list[str]:
-    """Concrete study topics: outline titles first, then specific keywords / filenames."""
+def _scoped_ready_docs(document_ids=None) -> list[dict]:
     try:
         from ..knowledge.integration import get_knowledge
 
@@ -88,8 +96,33 @@ def _knowledge_topics(limit: int = 6) -> list[str]:
             doc for doc in knowledge.list_documents('local-user')
             if doc.get('status') == 'ready' and not doc.get('needs_reindex')
         ]
+        if document_ids is None:
+            return docs
+        wanted = {str(item) for item in document_ids}
+        return [doc for doc in docs if str(doc.get('id')) in wanted]
+    except Exception:
+        return []
+
+
+def _has_chapter2_materials(document_ids=None) -> bool:
+    from .question_banks import looks_like_chapter2
+
+    return any(looks_like_chapter2(doc.get('filename')) for doc in _scoped_ready_docs(document_ids))
+
+
+def _knowledge_topics(limit: int = 6, document_ids=None) -> list[str]:
+    """Concrete study topics: outline titles first, then specific keywords / filenames."""
+    try:
+        from ..knowledge.integration import get_knowledge
+        from .question_banks import CHAPTER2_TOPICS, looks_like_chapter2
+
+        knowledge = get_knowledge()
+        docs = _scoped_ready_docs(document_ids)[:4]
         candidates: list[str] = []
-        for doc in docs[:4]:
+        # Prefer curated Chapter 2 knowledge points over page titles / weak OCR keywords.
+        if any(looks_like_chapter2(doc.get('filename')) for doc in docs):
+            candidates.extend(CHAPTER2_TOPICS)
+        for doc in docs:
             overview = knowledge.document_overview('local-user', doc['id'])
             for item in overview.get('outline') or []:
                 title = re.sub(r'\s+', ' ', (item.get('title') or '')).strip()
@@ -253,7 +286,7 @@ def _distractor_terms(passages: list[dict], topic: str, criteria: list[str] | No
     """Other real terms from the same passages, never numbered placeholders."""
     found: list[str] = []
     for word in list(criteria or []) + [
-        item for passage in passages for item in re.findall(r'[\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9]{1,12}', passage.get('snippet') or '')
+        item for passage in passages for item in re.findall(r'[\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9*]{1,24}', passage.get('snippet') or '')
     ]:
         token = (word or '').strip()
         if not _is_good_term(token) or token == topic or topic in token or token in topic:
@@ -262,6 +295,16 @@ def _distractor_terms(passages: list[dict], topic: str, criteria: list[str] | No
             found.append(token)
         if len(found) >= 3:
             break
+    # Prefer nearby curated Chapter 2 terms when the deck is in play.
+    if _has_chapter2_materials():
+        from .question_banks import CHAPTER2_TOPICS
+        for label in CHAPTER2_TOPICS:
+            if label == topic or not _is_good_term(label):
+                continue
+            if label not in found and not _text_mentions(label, topic):
+                found.append(label)
+            if len(found) >= 3:
+                break
     fillers = ['文中没有的说法', '相反的条件', '无关的步骤']
     for filler in fillers:
         if len(found) >= 3:
@@ -269,6 +312,28 @@ def _distractor_terms(passages: list[dict], topic: str, criteria: list[str] | No
         if filler not in found:
             found.append(filler)
     return found[:3]
+
+
+def _review_from_chapter2_bank(item: dict, document_ids=None) -> dict:
+    """Turn a curated Chapter 2 MCQ into a normal review payload."""
+    cue = item.get('cue') or item['topic']
+    passages = _passages_about_topic(cue, document_ids, k=4) or _passages_about_topic(item['topic'], document_ids, k=4)
+    display = _display_question(item['question'], item['options'], 'multiple_choice')
+    return {
+        'topic': item['topic'],
+        'question': display,
+        'stem': item['question'],
+        'question_type': 'multiple_choice',
+        'options': item['options'],
+        'correct_key': item['correct_key'],
+        'criteria': item.get('criteria') or [item['topic']],
+        'reference_answer': item.get('reference_answer') or item['options'][0]['text'],
+        'sources': passages,
+        'grading_mode': 'curated',
+        'document_ids': document_ids,
+        'snapshot_version': 2,
+        'bank': 'chapter2',
+    }
 
 
 def _deterministic_order(items: list[str], salt: str) -> list[str]:
@@ -414,6 +479,12 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
         topic = raw_topic
     preferred = preferred_type if preferred_type in QUESTION_TYPES else 'short_answer'
     knowledge=get_knowledge()
+    # Curated Chapter 2 bank: real knowledge-point options instead of slide chrome.
+    if preferred == 'multiple_choice' and _has_chapter2_materials(document_ids):
+        from .question_banks import chapter2_match_item
+        curated = chapter2_match_item(topic, salt=str(document_ids or topic))
+        if curated:
+            return _review_from_chapter2_bank(curated, document_ids)
     # Only chunks that contain this knowledge point. Unrelated hits must not become the question.
     passages=_passages_about_topic(topic, document_ids, k=8)
     criteria=_criteria_for_topic(topic,passages)
@@ -444,8 +515,9 @@ def begin_review(topic: str, document_ids=None, preferred_type: QuestionType | N
                 '题型：multiple_choice（3–4 个互斥选项）、true_false（A 正确 / B 错误）、'
                 'short_answer（简答）、fill_blank（挖空填关键词）、compare（对比异同）。'
                 '客观题必须给 options 与 correct_key；correct_key 必须对应唯一能被资料原文支持的选项。'
-                '干扰项须来自同一主题的相近表述或常见误解，但须与资料矛盾或未被资料支持，禁止「干扰项1」等占位。'
-                '选项 text 须为完整可读的句子或短语，尽量改写自资料而非空泛概括。'
+                '干扰项须来自同一主题的相近概念、常见误解或易混术语，且本身也是知识点表述；'
+                '禁止用页眉、课程代号、Chapter/页码、「干扰项1」或空泛口号当选项。'
+                '选项 text 须为完整可读的知识点句子或术语短语，尽量改写自资料。'
                 '主观题 options 留空；评分要点 criteria 为完整正确陈述，不要只列单词。'
                 'topic 必须沿用给定 topic，题干里写出这个知识点名称。'
                 '题目只能考查该知识点在资料中的定义、条件、步骤或事实，禁止改考同一片段里的无关句子。'
@@ -1120,7 +1192,23 @@ def daily_quiz(
 ) -> dict:
     limit = max(1, min(limit, 5))
     rotation = _DIFFICULTY_ROTATION.get(difficulty, QUESTION_TYPES)
-    material = _knowledge_topics(max(limit * 3, limit))
+    # DSAI5205 Chapter 2: serve curated knowledge-point MCQs first.
+    if multiple_choice_only and not topics and _has_chapter2_materials(document_ids):
+        from .question_banks import chapter2_quiz_items
+        curated = [
+            _review_from_chapter2_bank(item, document_ids)
+            for item in chapter2_quiz_items(limit, salt=str(document_ids or 'chapter2'))
+        ]
+        if curated:
+            return {
+                'kind': 'daily_quiz',
+                'count': len(curated),
+                'items': curated,
+                'difficulty': difficulty,
+                'instruction': '逐题作答。每组只显示当前这一题，答完或说「下一题」再继续。',
+                'bank': 'chapter2',
+            }
+    material = _knowledge_topics(max(limit * 3, 6), document_ids=document_ids)
     if topics:
         seeds = [resolve_topic(t) for t in topics if t and t.strip()]
     elif material:

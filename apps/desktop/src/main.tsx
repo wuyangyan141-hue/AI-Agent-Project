@@ -90,6 +90,7 @@ function App() {
   type LearnerProfile = { answer_style: 'concise' | 'detailed' | 'socratic'; tone: string; language: string; background: string; notes: string };
   const [learner, setLearner] = useState<LearnerProfile>({ answer_style: 'concise', tone: 'friendly', language: 'zh', background: '', notes: '' });
   const [learnerBusy, setLearnerBusy] = useState(false);
+  const [dataBusy, setDataBusy] = useState(false);
   const [projects, setProjects] = useState<LearningProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectBusy, setProjectBusy] = useState(false);
@@ -641,6 +642,59 @@ function App() {
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw Error(data.detail || '请求失败'); }
     return response.json();
   }
+  function resetLocalUiAfterWipe() {
+    conversation.newChat();
+    setDraft(null);
+    setReview(null);
+    setReviewFeedback('');
+    setFocus({ id: null, remaining_seconds: 0 });
+    setDocuments([]);
+    setDocumentVersion((v) => v + 1);
+    localStorage.removeItem('companion-active-project');
+    setActiveProjectId(null);
+  }
+  async function clearAllChatHistory() {
+    if (!confirm('清空全部聊天记录？学习夹和资料会保留，仅删除对话消息。')) return;
+    setDataBusy(true);
+    try {
+      await request('/knowledge/sessions', { method: 'DELETE' });
+      conversation.newChat();
+      setDraft(null);
+      await loadProjects().then(async (list) => {
+        if (list[0]) await activateProject(list[0], { force: true });
+      });
+      setNotice('已清空全部聊天记录。');
+    } catch (err) {
+      setNotice(String(err));
+    } finally {
+      setDataBusy(false);
+    }
+  }
+  async function resetLocalDatabase() {
+    if (!confirm('将删除本地资料、学习夹、任务、复习与聊天记录。模型 API 设置会保留。此操作不可恢复。')) return;
+    const typed = window.prompt('请输入 RESET 确认清空本地数据库：');
+    if (typed?.trim() !== 'RESET') {
+      setNotice('已取消：未输入 RESET。');
+      return;
+    }
+    setDataBusy(true);
+    try {
+      await request('/knowledge/data/reset', {
+        method: 'POST',
+        body: JSON.stringify({ confirm: 'RESET', keep_preferences: true }),
+      });
+      resetLocalUiAfterWipe();
+      const list = await loadProjects();
+      if (list[0]) await activateProject(list[0], { force: true });
+      await loadTasks();
+      fetch(`${api}/learning/streak`).then((r) => r.json()).then(setStreak).catch(() => setStreak(null));
+      setNotice('本地数据已清空，已重建默认学习夹。');
+    } catch (err) {
+      setNotice(String(err));
+    } finally {
+      setDataBusy(false);
+    }
+  }
   async function createDraft(kind: 'plan' | 'replan') {
     try {
       setPet('thinking'); setActivity('正在制定计划');
@@ -831,7 +885,7 @@ function App() {
     <div className="panel-scroll">
     <div className={`content-canvas${tab === 'chat' ? ' content-canvas-chat' : ''}`}>
     {tab==='chat'&&<ChatWorkspace petName={petName} messages={messages} sending={sending} connection={connection} activity={activity} setInput={setInput} onOpenLibrary={()=>setTab('library')} transcriptRef={transcriptRef} messagesEndRef={messagesEnd} sendText={sendText} setSource={setSource} draft={draft} setDraft={closeDraft} confirmDraft={confirmDraft} />}
-        {['library','memory','history'].includes(tab)&&<div className="page-card knowledge-shell"><KnowledgePanels pane={tab as 'library'|'memory'|'history'} onOpenConversation={openConversation} onAsk={askKnowledge} onActivity={(state,text)=>{setPet(state);setActivity(text);}} onDocuments={()=>{setDocumentVersion(v=>v+1);void loadProjects();}} onDeleteConversation={id=>{if(session.current===id){conversation.newChat();setDraft(null);}void loadProjects();}} /></div>}
+        {['library','memory','history'].includes(tab)&&<div className="page-card knowledge-shell"><KnowledgePanels pane={tab as 'library'|'memory'|'history'} onOpenConversation={openConversation} onAsk={askKnowledge} onActivity={(state,text)=>{setPet(state);setActivity(text);}} onDocuments={()=>{setDocumentVersion(v=>v+1);void loadProjects();}} onDeleteConversation={id=>{if(session.current===id){conversation.newChat();setDraft(null);}void loadProjects();}} onClearHistory={()=>{conversation.newChat();setDraft(null);void loadProjects().then(list=>{if(list[0])void activateProject(list[0],{force:true});});}} /></div>}
     {tab === 'tasks' && (
       <>
         <TasksWorkspace
@@ -861,7 +915,7 @@ function App() {
         <section className="page-card"><h2>专注计时</h2>{focus.id ? <div><strong>{Math.floor(focus.remaining_seconds / 60)}:{String(focus.remaining_seconds % 60).padStart(2, '0')}</strong><button onClick={stopFocus}>结束</button></div> : <div className="controls"><input aria-label="专注分钟" type="number" min={1} max={240} value={focusMinutes} onChange={e => setFocusMinutes(Number(e.target.value))}/><button onClick={startFocus}>开始专注</button></div>}<h2>交互式复习</h2><div className="controls"><input aria-label="复习知识点" value={reviewTopic} onChange={e => setReviewTopic(e.target.value)} placeholder="例如：B+树"/><button onClick={startReview} disabled={!reviewTopic.trim()}>开始复习</button><button className="quiet" onClick={async()=>{try{const quiz=await requestJson('/reviews/daily-quiz','POST',{session_id:session.current,...scopeFields(scope)});setReview(quiz.items?.[0]||null);setReviewFeedback('');setNotice(`今日小测 ${quiz.count} 题，先做第 1 题`);}catch(e){setNotice(String(e));}}}>今日小测</button><button className="quiet" onClick={async()=>{try{const item=await requestJson('/reviews/weak-point','POST',{session_id:session.current,...scopeFields(scope)});setReview(item);setReviewFeedback('');setNotice('已挑出薄弱点回顾题');}catch(e){setNotice(String(e));}}}>薄弱点回顾</button></div>{review && <div className="review-card"><p className="review-stem">{review.stem || review.question}</p>{!!review.options?.length && <div className="review-options" role="group" aria-label="选项">{review.options.map(option=><button key={option.key} type="button" className={reviewAnswer===option.key?'active':''} onClick={()=>pickReviewOption(option)}><span>{option.key}</span>{option.text}</button>)}</div>}{(!review.options?.length || !['multiple_choice','true_false'].includes(review.question_type||'')) && <><textarea aria-label="我的回答" value={reviewAnswer} onChange={e => setReviewAnswer(e.target.value)} placeholder={review.question_type==='fill_blank'?'填入关键词…':'用自己的话作答…'}/><button onClick={()=>submitReview()} disabled={!reviewAnswer.trim()}>提交回答</button></>}</div>}{reviewFeedback && <p role="status">{reviewFeedback}</p>}</section>
       </>
     )}
-    {tab === 'settings' && <section className="settings-panel page-card"><h2>设置</h2><form onSubmit={saveName}><label htmlFor="pet-name">桌宠名字</label><input id="pet-name" value={petName} onChange={e => setPetName(e.target.value)} maxLength={100}/><button>保存</button></form>{window.desktop && <button type="button" onClick={() => window.desktop?.showPet()}>显示悬浮桌宠</button>}<h2>学习者画像</h2><p className="muted">影响答题表达方式，不会覆盖知识库证据约束。</p><form className="learner-settings" onSubmit={saveLearnerProfile}><label>回答风格<select aria-label="回答风格" value={learner.answer_style} onChange={e=>setLearner(prev=>({...prev,answer_style:e.target.value as LearnerProfile['answer_style']}))}><option value="concise">简洁</option><option value="detailed">详细分点</option><option value="socratic">启发式提问</option></select></label><label>语气<input aria-label="语气" value={learner.tone} onChange={e=>setLearner(prev=>({...prev,tone:e.target.value}))} maxLength={40}/></label><label>语言<input aria-label="语言" value={learner.language} onChange={e=>setLearner(prev=>({...prev,language:e.target.value}))} maxLength={16}/></label><label>背景<textarea aria-label="背景" value={learner.background} onChange={e=>setLearner(prev=>({...prev,background:e.target.value}))} maxLength={600} rows={3}/></label><label>补充备注<textarea aria-label="补充备注" value={learner.notes} onChange={e=>setLearner(prev=>({...prev,notes:e.target.value}))} maxLength={300} rows={2}/></label><button disabled={learnerBusy}>{learnerBusy?'保存中…':'保存学习者画像'}</button></form><h2>模型与 API</h2><p className="muted">{llm.hint || '选择离线或在线；在线模式使用你自己的 OpenAI 兼容接口。'}</p><form className="llm-settings" onSubmit={saveLlmSettings}><label>运行模式<select aria-label="运行模式" value={llm.mode} onChange={e=>setLlm(prev=>({...prev,mode:e.target.value as 'offline'|'online'}))}><option value="offline">离线 · 本地检索与模板</option><option value="online">在线 · 使用我的 API</option></select></label><label>接口预设<select aria-label="接口预设" value={llm.provider} onChange={e=>applyPreset(e.target.value)} disabled={llm.mode!=='online'}>{(llm.presets||[{id:'custom',label:'自定义 OpenAI 兼容接口',base_url:'',model:''}]).map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label>模型名<input aria-label="模型名" value={llm.llm_model} onChange={e=>setLlm(prev=>({...prev,llm_model:e.target.value}))} placeholder="例如：qwen-plus / gpt-4o-mini" disabled={llm.mode!=='online'} maxLength={120}/></label><label>Base URL<input aria-label="Base URL" value={llm.llm_base_url} onChange={e=>setLlm(prev=>({...prev,llm_base_url:e.target.value}))} placeholder="https://…/compatible-mode/v1" disabled={llm.mode!=='online'} maxLength={300}/></label><label>API Key<input aria-label="API Key" type="password" value={llm.llm_api_key} onChange={e=>setLlm(prev=>({...prev,llm_api_key:e.target.value}))} placeholder={llm.has_api_key?`已保存 ${llm.api_key_masked||''}（留空则保留）`:'填写你的密钥'} disabled={llm.mode!=='online'} maxLength={200} autoComplete="off"/></label><button disabled={llmBusy}>{llmBusy?'保存中…':'保存模型设置'}</button></form><p>当前：{llm.mode==='online'?(llm.online_ready?'在线已就绪 · 复习批改走你的 API':'在线未就绪 · 请补全模型/密钥/地址'):'离线模式'} · Agent {mode==='demo'?'演示':'LangChain'}</p></section>}
+    {tab === 'settings' && <section className="settings-panel page-card"><h2>设置</h2><form onSubmit={saveName}><label htmlFor="pet-name">桌宠名字</label><input id="pet-name" value={petName} onChange={e => setPetName(e.target.value)} maxLength={100}/><button>保存</button></form>{window.desktop && <button type="button" onClick={() => window.desktop?.showPet()}>显示悬浮桌宠</button>}<h2>学习者画像</h2><p className="muted">影响答题表达方式，不会覆盖知识库证据约束。</p><form className="learner-settings" onSubmit={saveLearnerProfile}><label>回答风格<select aria-label="回答风格" value={learner.answer_style} onChange={e=>setLearner(prev=>({...prev,answer_style:e.target.value as LearnerProfile['answer_style']}))}><option value="concise">简洁</option><option value="detailed">详细分点</option><option value="socratic">启发式提问</option></select></label><label>语气<input aria-label="语气" value={learner.tone} onChange={e=>setLearner(prev=>({...prev,tone:e.target.value}))} maxLength={40}/></label><label>语言<input aria-label="语言" value={learner.language} onChange={e=>setLearner(prev=>({...prev,language:e.target.value}))} maxLength={16}/></label><label>背景<textarea aria-label="背景" value={learner.background} onChange={e=>setLearner(prev=>({...prev,background:e.target.value}))} maxLength={600} rows={3}/></label><label>补充备注<textarea aria-label="补充备注" value={learner.notes} onChange={e=>setLearner(prev=>({...prev,notes:e.target.value}))} maxLength={300} rows={2}/></label><button disabled={learnerBusy}>{learnerBusy?'保存中…':'保存学习者画像'}</button></form><h2>模型与 API</h2><p className="muted">{llm.hint || '选择离线或在线；在线模式使用你自己的 OpenAI 兼容接口。'}</p><form className="llm-settings" onSubmit={saveLlmSettings}><label>运行模式<select aria-label="运行模式" value={llm.mode} onChange={e=>setLlm(prev=>({...prev,mode:e.target.value as 'offline'|'online'}))}><option value="offline">离线 · 本地检索与模板</option><option value="online">在线 · 使用我的 API</option></select></label><label>接口预设<select aria-label="接口预设" value={llm.provider} onChange={e=>applyPreset(e.target.value)} disabled={llm.mode!=='online'}>{(llm.presets||[{id:'custom',label:'自定义 OpenAI 兼容接口',base_url:'',model:''}]).map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label>模型名<input aria-label="模型名" value={llm.llm_model} onChange={e=>setLlm(prev=>({...prev,llm_model:e.target.value}))} placeholder="例如：qwen-plus / gpt-4o-mini" disabled={llm.mode!=='online'} maxLength={120}/></label><label>Base URL<input aria-label="Base URL" value={llm.llm_base_url} onChange={e=>setLlm(prev=>({...prev,llm_base_url:e.target.value}))} placeholder="https://…/compatible-mode/v1" disabled={llm.mode!=='online'} maxLength={300}/></label><label>API Key<input aria-label="API Key" type="password" value={llm.llm_api_key} onChange={e=>setLlm(prev=>({...prev,llm_api_key:e.target.value}))} placeholder={llm.has_api_key?`已保存 ${llm.api_key_masked||''}（留空则保留）`:'填写你的密钥'} disabled={llm.mode!=='online'} maxLength={200} autoComplete="off"/></label><button disabled={llmBusy}>{llmBusy?'保存中…':'保存模型设置'}</button></form><p>当前：{llm.mode==='online'?(llm.online_ready?'在线已就绪 · 复习批改走你的 API':'在线未就绪 · 请补全模型/密钥/地址'):'离线模式'} · Agent {mode==='demo'?'演示':'LangChain'}</p><h2>数据管理</h2><p className="muted">清空聊天只删对话消息；重置数据库会删除资料、学习夹、任务与复习进度，并重建默认学习夹。模型 API 设置默认保留。</p><div className="data-mgmt"><button type="button" className="quiet" disabled={dataBusy} onClick={() => void clearAllChatHistory()}>{dataBusy ? '处理中…' : '清空全部聊天记录'}</button><button type="button" className="pp-btn pp-btn--danger" disabled={dataBusy} onClick={() => void resetLocalDatabase()}>{dataBusy ? '处理中…' : '重置本地数据库'}</button></div></section>}
     </div>
     </div>
     <GlobalCareRail

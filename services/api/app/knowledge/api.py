@@ -173,6 +173,29 @@ def messages(session_id: str,service: Service,user: User):
 def delete_session(session_id: str,service: Service,user: User):
     service.delete_session(user,session_id)
 
+@router.delete('/sessions')
+def clear_sessions(service: Service,user: User):
+    """Clear all chat messages. Learning folders stay; orphan sessions are removed."""
+    return service.clear_chat_history(user)
+
+
+class ResetDataBody(BaseModel):
+    keep_preferences: bool = True
+    confirm: str = Field(default='', max_length=32)
+
+    @field_validator('confirm')
+    @classmethod
+    def must_confirm(cls, value):
+        if value.strip() != 'RESET':
+            raise ValueError('请发送 confirm=RESET 以确认清空本地数据。')
+        return value.strip()
+
+
+@router.post('/data/reset')
+def reset_local_data(body: ResetDataBody, service: Service, user: User):
+    """Wipe documents, chats, projects, memories and companion study tables for this user."""
+    return service.reset_local_data(user, keep_preferences=body.keep_preferences)
+
 @router.get('/preferences')
 def preferences(service: Service,user: User):
     return service.preferences(user)

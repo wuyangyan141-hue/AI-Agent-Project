@@ -729,7 +729,74 @@ class KnowledgeService:
 
     def delete_session(self, user_id, session_id):
         self.get_session(user_id, session_id)
-        self.db.execute("DELETE FROM knowledge_sessions WHERE id=? AND user_id=?", (session_id, user_id))
+        # Learning folders own a session; wipe messages instead of cascading the project away.
+        linked = self.db.one(
+            'SELECT id, name FROM learning_projects WHERE user_id=? AND session_id=?',
+            (user_id, session_id),
+        )
+        if linked:
+            self.db.execute('DELETE FROM knowledge_messages WHERE session_id=?', (session_id,))
+            # Keep folder document scope; only clear free-form topic if any.
+            self.db.execute(
+                "UPDATE knowledge_session_context SET topic='', updated_at=? WHERE session_id=?",
+                (now(), session_id),
+            )
+            title = (linked.get('name') or '新对话')[:36]
+            self.db.execute(
+                'UPDATE knowledge_sessions SET title=?, updated_at=? WHERE id=? AND user_id=?',
+                (title, now(), session_id, user_id),
+            )
+            return {'cleared': True, 'session_id': session_id, 'project_kept': True}
+        self.db.execute('DELETE FROM knowledge_sessions WHERE id=? AND user_id=?', (session_id, user_id))
+        return {'deleted': True, 'session_id': session_id}
+
+    def clear_chat_history(self, user_id):
+        """Remove all chat messages. Keep learning-folder sessions; delete orphan sessions."""
+        sessions = self.list_sessions(user_id)
+        kept = 0
+        removed = 0
+        for row in sessions:
+            result = self.delete_session(user_id, row['id'])
+            if result.get('project_kept'):
+                kept += 1
+            else:
+                removed += 1
+        return {'cleared_messages_sessions': kept, 'deleted_sessions': removed, 'total': len(sessions)}
+
+    def reset_local_data(self, user_id, *, keep_preferences: bool = True):
+        """Wipe local study data for this user (documents, chats, projects, memories)."""
+        docs = self.list_documents(user_id)
+        for doc in docs:
+            try:
+                self.delete_document(user_id, doc['id'])
+            except Exception:
+                self.db.execute('DELETE FROM knowledge_documents WHERE id=? AND user_id=?', (doc['id'], user_id))
+        for row in self.list_sessions(user_id):
+            self.db.execute('DELETE FROM knowledge_sessions WHERE id=? AND user_id=?', (row['id'], user_id))
+        self.db.execute('DELETE FROM knowledge_memories WHERE user_id=?', (user_id,))
+        self.db.execute('DELETE FROM knowledge_bookmarks WHERE user_id=?', (user_id,))
+        if not keep_preferences:
+            self.db.execute('DELETE FROM knowledge_preferences WHERE user_id=?', (user_id,))
+        # Companion app tables live in the same SQLite file.
+        try:
+            from ..database import store
+            with store.connect() as db:
+                for table in (
+                    'messages', 'tasks', 'replan_drafts', 'plan_drafts',
+                    'focus_sessions', 'review_sessions',
+                ):
+                    db.execute(f'DELETE FROM {table}')
+                if not keep_preferences:
+                    db.execute("DELETE FROM preferences WHERE key NOT IN ('llm_config')")
+                db.commit()
+        except Exception:
+            pass
+        project = self.ensure_default_project(user_id)
+        return {
+            'documents_removed': len(docs),
+            'default_project_id': project.get('id'),
+            'preferences_kept': keep_preferences,
+        }
 
     def answer(self, user_id, question, session_id=None, document_ids=UNSET, operation='auto'):
         with self._chat_lock:

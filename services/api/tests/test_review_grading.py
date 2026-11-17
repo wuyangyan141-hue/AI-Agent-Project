@@ -5,7 +5,7 @@ def test_offline_multiple_choice_hides_key_and_grades(monkeypatch):
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: True)
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['碳酸锂', '价格预测', '供需', '库存'],
+        lambda limit=6, document_ids=None: ['碳酸锂', '价格预测', '供需', '库存'],
     )
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_passages',
@@ -142,7 +142,7 @@ def test_true_false_accepts_chinese_labels(monkeypatch):
 
 def test_builtin_topic_grades_by_checklist_without_docs(monkeypatch):
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: False)
-    monkeypatch.setattr('app.skills.review_session._knowledge_topics', lambda limit=6: [])
+    monkeypatch.setattr('app.skills.review_session._knowledge_topics', lambda limit=6, document_ids=None: [])
     monkeypatch.setattr('app.skills.review_session._knowledge_passages', lambda topic, limit=3: [])
     result = evaluate_review(
         'B+树',
@@ -157,7 +157,7 @@ def test_with_materials_builtin_topic_is_replaced(monkeypatch):
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: True)
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['碳酸锂', '价格预测', '供需'],
+        lambda limit=6, document_ids=None: ['碳酸锂', '价格预测', '供需'],
     )
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_passages',
@@ -179,8 +179,9 @@ def test_with_materials_builtin_topic_is_replaced(monkeypatch):
 def test_daily_quiz_prefers_material_topics(monkeypatch):
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['碳酸锂', '价格预测', '供需'],
+        lambda limit=6, document_ids=None: ['碳酸锂', '价格预测', '供需'],
     )
+    monkeypatch.setattr('app.skills.review_session._has_chapter2_materials', lambda document_ids=None: False)
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: True)
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_passages',
@@ -195,7 +196,7 @@ def test_daily_quiz_prefers_material_topics(monkeypatch):
 def test_resolve_vague_topic(monkeypatch):
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['动态优选'],
+        lambda limit=6, document_ids=None: ['动态优选'],
     )
     assert resolve_topic('重点') == '动态优选'
     assert resolve_topic('预测') == '动态优选'
@@ -205,7 +206,7 @@ def test_begin_review_resolves_vague_topic_even_with_document_ids(monkeypatch):
     """Desktop pet often sends document_ids; vague「今日重点」must still resolve."""
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['双MACD进场信号', '金叉确认'],
+        lambda limit=6, document_ids=None: ['双MACD进场信号', '金叉确认'],
     )
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: True)
     monkeypatch.setattr(
@@ -247,7 +248,7 @@ def test_begin_review_resolves_vague_topic_even_with_document_ids(monkeypatch):
 def test_begin_review_falls_back_when_model_quotes_invalid(monkeypatch):
     monkeypatch.setattr(
         'app.skills.review_session._knowledge_topics',
-        lambda limit=6: ['金叉确认'],
+        lambda limit=6, document_ids=None: ['金叉确认'],
     )
     monkeypatch.setattr('app.skills.review_session._has_ready_documents', lambda: True)
 
