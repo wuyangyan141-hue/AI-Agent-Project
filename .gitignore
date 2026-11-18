@@ -13,3 +13,10 @@ __pycache__/
 data/
 *.db
 .DS_Store
+
+# Local course-report drafts / generated eval tables (do not upload)
+docs/report-*.md
+docs/rag-benchmark-results.md
+docs/rag-benchmark-results.json
+docs/report-demo-ch2/README.md
+services/api/eval/out/
