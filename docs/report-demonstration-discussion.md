@@ -60,39 +60,31 @@ The floating pet mirrors chat turns and quick actions (today’s plan, quiz, rev
 
 ## 5 Discussion
 
-### 5.1 Why this design is appropriate
+### 5.1 Positioning: a study loop, not a chat toy
 
-Course study is not only “chat with a PDF.” Learners need (1) **traceable** answers they can check against slides, (2) a **single loop** from materials to practice, and (3) **safe refusals** when the corpus cannot support an answer. DouDou’s architecture separates concerns with intent-first routing: plan / focus / quiz / review commands do not force RAG on every utterance, while explicit knowledge questions use retrieval with quote checks. Draft-then-confirm planning avoids silently rewriting the user’s task list. Freezing quiz evidence at generation time makes grading stable and auditable. The desktop pet is a lightweight presence layer on the same protocol, not a second disconnected product.
+The design question for DouDou was whether a desktop companion should behave like a general chatbot with documents attached, or like a local study loop that keeps materials, scheduling, practice, and presence in one place. We chose the latter. Self-directed study often fails when answers cannot be checked against source pages, when plans rewrite a learner’s schedule without consent, and when quizzes collide with ordinary chat because assessment state is not isolated. DouDou is therefore organised as a continuous workflow in which learners upload materials, ask with citations, receive a clear refusal when the corpus cannot support an answer, confirm plans before tasks are written, and then move into focus, quiz, or review, rather than as a set of disconnected features.
 
-### 5.2 What the system can do
+Intent-first routing is what makes that workflow workable. Plan, focus, quiz, and review are handled as dedicated flows, while only explicit knowledge questions enter the retrieval path with quote checks. Asking for a multi-day plan must not be answered as if it were a definition question about the document, and advancing a quiz must not be graded as an option letter. The floating pet shares the same conversation and human-in-the-loop protocol as the main window, so presence remains a thin client of one system rather than a second product.
 
-On DSAI5205 Chapter 2 we showed that DouDou can:
+### 5.2 What the system demonstrates in practice
 
-- ingest a lecture PDF into page-aware chunks and expose them in a learning folder;
-- answer in-scope questions with page-level citations (and compare BFS/DFS from the same deck);
-- refuse off-topic questions without fabricating facts;
-- summarise the full indexed chapter when requested;
-- draft a material-grounded study plan that requires human confirmation;
-- run a short multiple-choice quiz on document knowledge points, one question at a time, with scored feedback;
-- keep pet UI and main window aligned on the same conversation and HITL flows.
+Without tying the argument to any single lecture file, the prototype shows several behaviours that matter for a study companion. In-scope questions return answers with page- or snippet-linked citations, and opening a citation reveals the supporting passage, so the learner can verify the model against the material instead of trusting fluent prose alone. When the indexed corpus cannot support a question, the system returns a no-evidence response rather than inventing facts; for study tools, a clear refusal is preferable to a confident hallucination. Study plans are drafted from goals and available materials, but tasks are written only after the user confirms, and cancelling or closing the draft leaves the task list unchanged, which matches how learners negotiate workload in practice. Daily quizzes and reviews prefer objective items, show one waiting question at a time, and keep remaining items queued so normal chat is not mis-scored; each item freezes its stem, options, and evidence at generation time, which keeps grading auditable even if later retrieval would return different chunks.
 
-Offline (no API key), lexical retrieval and extractive overviews still work; online mode adds structured LLM answers, summary synthesis, and stronger quiz generation.
+Offline mode still supports lexical retrieval and extractive overviews, while online mode adds structured synthesis and stronger free-form generation when an API is configured. The same local stack therefore remains usable with or without a cloud model.
 
-### 5.3 What the system cannot do (limitations)
+### 5.3 Limitations
 
-- We did **not** measure learning outcomes (retention, exam scores, or time-on-task studies).
-- Even with valid quotes, the LLM may **misinterpret** evidence; grounding reduces citation hallucination but does not guarantee perfect pedagogy.
-- Without semantic embeddings, English prompts that do not **lexically overlap** the slides may yield `no_evidence` (e.g. asking “supervised learning” on a search chapter).
-- Scanned PDFs without OCR, very long documents under tight context budgets, and **multi-user / cloud** deployment are out of scope for this single-user local prototype.
-- Quiz quality still depends on keyword/topic extraction quality; thin or poorly structured PDFs produce weaker items.
+The scope of this work should be read carefully. We evaluated system behaviour and interaction design through demonstration and a small offline RAG sample; we did not run a controlled study of learning outcomes such as retention or exam performance. Answer quality still depends on the configured model and on how clearly the uploaded material states a point, even when citations are present. The default local setup favours lexical retrieval and optional embeddings, which is enough for the prototype but leaves room for stronger semantic matching in later releases. The current build targets a single-user desktop companion: very large libraries, multi-user sync, and cloud tenancy were not design goals for this version.
 
-### 5.4 What we would improve
+### 5.4 Design trade-offs
 
-1. **Stronger retrieval for course English** — default hybrid BM25 + embeddings with a small DSAI5205 regression set of gold Q&A.
-2. **Richer quiz authoring** — paraphrased correct options (not only cloze/copy), distractors from nearby misconceptions, and jump-to-page from each option.
-3. **OCR and format coverage** — scanned slides and legacy Office files without manual conversion.
-4. **Mismatch warnings** — if the user’s plan goal contradicts the selected PDF topics, surface an explicit warning.
-5. **Evaluation harness** — automated checks for citation support rate, plan confirm UX, and quiz queue behaviour, plus an optional submitted video walkthrough for presentation marking.
+Several trade-offs shaped the shipped behaviour. Keeping the companion and knowledge base on-device preserves privacy and offline study, at the cost of weaker default semantics without embeddings or an API key. Requiring plan confirmation slows one-click scheduling, but avoids rewriting a learner’s week without consent. Queuing quiz items and freezing evidence add interface state, yet they prevent chat turns from being graded as answers—a failure mode that is easy to ignore in chatbot demos and costly in real use. In each case we favoured inspectability and consent over maximum automation.
+
+### 5.5 Future work
+
+Looking ahead, we would extend the same study loop rather than redesign it. Hybrid retrieval with stronger embeddings can deepen cross-language and paraphrase understanding while keeping page-linked citations. The small-sample RAG suite in `docs/rag-benchmark-results.md` can grow into a regular regression check as more course packs are added. Quiz generation can become richer—more varied stems, clearer knowledge-point options, and one-click jumps from an answer back to the source page. Broader document intake (including OCR and additional office formats) would let learners keep more of their materials inside one companion. On the product side, clearer goal–material coaching before plan confirm, and lightweight automated checks for citation support and HITL flows, would help each release stay aligned with the behaviours shown in the demonstration.
+
+Taken together, the work suggests that a local companion can make study materials checkable, schedulable with consent, and practisable without breaking chat, when routing, grounding, and assessment state are treated as first-class parts of the design.
 
 ---
 

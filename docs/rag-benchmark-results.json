@@ -1,0 +1,152 @@
+{
+  "name": "rag_small_sample_v1",
+  "generated_at": "2026-11-18T03:11:16.547102+00:00",
+  "corpus": "corpus/search_basics.txt",
+  "embedding_provider": "local",
+  "llm": false,
+  "document_id": "f9a7041d26b947f69e418988c4e9d44e",
+  "metrics": {
+    "n": 12,
+    "pass_rate": 0.9167,
+    "retrieval_hit_rate": 0.9167,
+    "evidence_support_rate": 1.0,
+    "refusal_accuracy": 0.75,
+    "in_scope_pass_rate": 1.0,
+    "paraphrase_pass_rate": 1.0,
+    "off_topic_pass_rate": 0.75
+  },
+  "cases": [
+    {
+      "id": "in_01_searching",
+      "kind": "in_scope",
+      "question": "What is searching and what is the solution in this material?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "in_02_bfs_memory",
+      "kind": "in_scope",
+      "question": "What makes breadth-first search demanding on memory?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": "Avoid leading English 'Why …' — the router treats bare why-followups as clarifications."
+    },
+    {
+      "id": "in_03_dfs_shortest",
+      "kind": "in_scope",
+      "question": "Does depth-first search generally find the shortest path?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "in_04_astar",
+      "kind": "in_scope",
+      "question": "What evaluation function does A* search use?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "in_05_uninformed",
+      "kind": "in_scope",
+      "question": "What is uninformed or blind search according to the notes?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "in_06_bfs_vs_dfs_path",
+      "kind": "in_scope",
+      "question": "In the S to G route example, what paths do BFS and DFS yield?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "in_07_genetic",
+      "kind": "in_scope",
+      "question": "How does a genetic algorithm create new solutions?",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "para_01_bfs_zh",
+      "kind": "paraphrase",
+      "question": "为什么 BFS 很占内存？",
+      "mode": "extractive",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": "Lexical overlap via BFS/memory; may miss if query expansion fails — tracked as paraphrase hardness."
+    },
+    {
+      "id": "off_01_mars",
+      "kind": "off_topic",
+      "question": "What is the capital city on Mars?",
+      "mode": "no_evidence",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "off_02_supervised",
+      "kind": "off_topic",
+      "question": "Explain supervised learning and backpropagation from this document.",
+      "mode": "extractive",
+      "retrieval_hit": false,
+      "evidence_support": false,
+      "mode_ok": false,
+      "passed": false,
+      "notes": "Known hard case: 'from this document' can trigger about-doc expansion and weak lexical hits."
+    },
+    {
+      "id": "off_03_macd",
+      "kind": "off_topic",
+      "question": "How do I trade stocks with the double MACD strategy?",
+      "mode": "no_evidence",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "id": "off_04_quantum",
+      "kind": "off_topic",
+      "question": "What is the temperature of the sun's core?",
+      "mode": "no_evidence",
+      "retrieval_hit": true,
+      "evidence_support": true,
+      "mode_ok": true,
+      "passed": true,
+      "notes": ""
+    }
+  ]
+}

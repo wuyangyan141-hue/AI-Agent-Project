@@ -1,0 +1,35 @@
+Searching Basics (evaluation corpus)
+
+What is searching?
+Searching is the process of looking for the solution of a problem through a set of states.
+Search conditions include the current state, the goal state, actions that move between states, and cost.
+The goal state is the step where the solution is found.
+The solution is a path from the current state to the goal state.
+
+Uninformed (Blind) Search
+Uninformed search expands nodes without domain heuristic guidance.
+Breadth-first search and depth-first search are common uninformed methods.
+
+Breadth-First Search (BFS)
+Breadth-first search expands nodes level by level.
+BFS is very demanding on memory because it must remember the unexpanded nodes at a level.
+If a solution exists and the state space is not too large, BFS can find a solution.
+In a route from S to G, breadth-first search may yield the shorter path S-B-G.
+
+Depth-First Search (DFS)
+Depth-first search expands along one branch as far as possible.
+If the search space contains very deep branches without a solution, depth-first search may waste much time.
+Depth-first search generally does not find the shortest path.
+In the same route example, depth-first search may yield S-A-C-G while breadth-first yields S-B-G.
+Compared with BFS, DFS only needs to store the current path, so it uses less memory.
+
+A* Search
+A* is an algorithm that uses a heuristic to guide the search while aiming for a minimum-cost path.
+A* computes the function f(n) = g(n) + h(n).
+g(n) is the actual cost from the start node to n.
+h(n) is an estimate of the cost of the cheapest path from n to the goal.
+The heuristic h(n) guides search toward promising states.
+
+Genetic Algorithm
+A genetic algorithm evaluates individuals with a fitness function.
+New solutions are produced by selection, crossover, and mutation across generations.
