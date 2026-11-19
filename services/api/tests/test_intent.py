@@ -42,15 +42,20 @@ def test_chat_plan_and_replan_need_confirmation(tmp_path, monkeypatch):
         assert ws.receive_json()['state'] == 'thinking'
         assert ws.receive_json()['state'] == 'tool'
         event = ws.receive_json()
-        assert event['kind'] == 'plan' and len(event['draft']['steps']) == 2
+        assert event['kind'] == 'plan_revise'
+        draft_id = event['hitl']['defaults']['draft_id']
+        with store.connect() as db:
+            assert len(store.load_plan_draft(db, draft_id)['steps']) == 2
         assert client.get('/tasks').json() == []
-        client.post(f"/plans/drafts/{event['draft']['id']}/confirm")
+        client.post(f"/plans/drafts/{draft_id}/confirm")
         before = client.get('/tasks').json()
         ws.send_json({'type': 'message', 'text': '重新安排未完成任务，2天每天60分钟'})
         assert ws.receive_json()['state'] == 'thinking'
         assert ws.receive_json()['state'] == 'tool'
         event = ws.receive_json()
-        assert event['kind'] == 'replan' and len(event['draft']['schedule']) == 2
+        assert event['kind'] == 'plan_revise'
+        with store.connect() as db:
+            assert len(store.load_replan_draft(db, event['hitl']['defaults']['draft_id'])['schedule']) == 2
         assert client.get('/tasks').json() == before
 
 
@@ -64,7 +69,10 @@ def test_plan_followup_goal(tmp_path, monkeypatch):
         ws.send_json({'type': 'message', 'text': '数据库索引'})
         assert ws.receive_json()['state'] == 'thinking'
         assert ws.receive_json()['state'] == 'tool'
-        assert ws.receive_json()['draft']['goal'] == '数据库索引'
+        event = ws.receive_json()
+        assert event['kind'] == 'plan_revise'
+        with store.connect() as db:
+            assert store.load_plan_draft(db, event['hitl']['defaults']['draft_id'])['goal'] == '数据库索引'
 
 
 def test_model_intent_contract_without_external_api(monkeypatch):
