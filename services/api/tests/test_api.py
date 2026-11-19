@@ -35,10 +35,12 @@ def test_chat_plan_requires_confirmation(tmp_path, monkeypatch):
         ws.send_json({'type': 'plan_request', 'payload': {'goal': '复习数据库', 'days': 2, 'minutes_per_day': 30}})
         assert ws.receive_json()['state'] == 'thinking'
         event = ws.receive_json()
-        assert event['type'] == 'plan_draft'
-        assert len(event['draft']['steps']) == 2
+        assert event['type'] == 'hitl_required' and event['kind'] == 'plan_revise'
+        draft_id = event['hitl']['defaults']['draft_id']
+        from app.database import store
+        with store.connect() as db:
+            assert len(store.load_plan_draft(db, draft_id)['steps']) == 2
         assert client.get('/tasks').json() == []
-        draft_id = event['draft']['id']
         ws.send_json({'type': 'plan_request', 'payload': {'goal': '', 'days': 2}})
         assert ws.receive_json()['type'] == 'error'
     assert len(client.post(f'/plans/drafts/{draft_id}/confirm').json()['task_ids']) == 2
