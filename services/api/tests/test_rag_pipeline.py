@@ -205,7 +205,8 @@ def test_review_uses_fixed_snapshot_after_document_deletion(kb):
     with store.connect() as db: saved=save_review(db,review,'session-a')
     kb.delete_document('local-user',doc['id'])
     with store.connect() as db: result=grade_saved_review(db,saved['id'],'相邻叶子能沿顺序访问，所以区间扫描很快。')
-    assert result['result']=='correct' and result['sources']==review['sources']
+    assert result['sources']==review['sources']
+    assert result['result']==('correct' if review['grading_mode']=='model' else 'needs_review')
     with store.connect() as db:
         with pytest.raises(ValueError):grade_saved_review(db,saved['id'],'重复提交')
 
