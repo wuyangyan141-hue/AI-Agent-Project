@@ -1,0 +1,14 @@
+{
+  "in_01_searching": "Searching looks for a solution through states; the solution is a path from the current state to the goal state.",
+  "in_02_bfs_memory": "BFS is demanding on memory because it must remember the unexpanded nodes at a level.",
+  "in_03_dfs_shortest": "No. DFS generally does not find the shortest path.",
+  "in_04_astar": "A* uses f(n) = g(n) + h(n), where g is the actual cost from start to n and h estimates remaining cost to the goal.",
+  "in_05_uninformed": "Uninformed or blind search expands nodes without domain heuristic guidance.",
+  "in_06_bfs_vs_dfs_path": "BFS may yield S-B-G, whereas DFS may yield S-A-C-G.",
+  "in_07_genetic": "A genetic algorithm uses selection, crossover, and mutation to produce new solutions across generations.",
+  "para_01_bfs_zh": "BFS 占内存，因为它需要记住同一层尚未展开的节点。",
+  "off_01_mars": "",
+  "off_02_supervised": "",
+  "off_03_macd": "",
+  "off_04_quantum": ""
+}
