@@ -16,7 +16,18 @@
 
 这些是**自动代理指标**，不是语义正确率、真正的 Recall@k 或忠实度。要测 Recall@k，需要逐题标注正确 chunk ID；要测幻觉/事实支持，需逐题人工核对，或加入独立的 LLM judge 并抽样人工复核。
 
-## 运行
+## Windows PowerShell 一键运行
+
+先撤销此前公开发送的密钥，重新生成一枚。克隆仓库后切换到 `eval/langsmith-rag` 分支。在仓库根目录运行：
+
+```powershell
+.\run-langsmith-rag.ps1 -Mode offline
+.\run-langsmith-rag.ps1 -Mode configured
+```
+
+脚本会建立 `services/api/.venv`、安装依赖，并在需要时隐藏输入新的 LangSmith API Key。它不会把密钥写入文件；结束时会从当前 PowerShell 进程的环境变量中移除。若 PowerShell 不允许运行本地脚本，可在当前窗口临时执行 `Set-ExecutionPolicy -Scope Process Bypass`，然后重试。`configured` 模式仍需按项目根目录 `.env.example` 在项目根目录 `.env` 配置 LLM 模型和密钥，不要提交 `.env`。
+
+## 手动运行（macOS / Linux / 已有 Python 环境）
 
 在 `services/api` 目录安装项目依赖及 `pip install "langsmith>=0.3,<1"`。设置 `LANGSMITH_API_KEY`（以及需要时的 `LANGSMITH_PROJECT=doudou-rag-eval`）。密钥放在本机环境变量，不要提交到仓库。
 
