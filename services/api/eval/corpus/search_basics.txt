@@ -6,14 +6,21 @@ Search conditions include the current state, the goal state, actions that move b
 The goal state is the step where the solution is found.
 The solution is a path from the current state to the goal state.
 
+Graph and Tree Representation
+Nodes represent states in a searching process.
+Edges represent actions that move the agent from one state to another.
+A search tree records the expansion order; a graph may share states across branches.
+
 Uninformed (Blind) Search
 Uninformed search expands nodes without domain heuristic guidance.
 Breadth-first search and depth-first search are common uninformed methods.
+Uniform-cost search expands the node with the lowest path cost g(n) first.
 
 Breadth-First Search (BFS)
 Breadth-first search expands nodes level by level.
 BFS is very demanding on memory because it must remember the unexpanded nodes at a level.
 If a solution exists and the state space is not too large, BFS can find a solution.
+When every action has the same cost, BFS finds a shortest path in the number of steps.
 In a route from S to G, breadth-first search may yield the shorter path S-B-G.
 
 Depth-First Search (DFS)
@@ -23,13 +30,23 @@ Depth-first search generally does not find the shortest path.
 In the same route example, depth-first search may yield S-A-C-G while breadth-first yields S-B-G.
 Compared with BFS, DFS only needs to store the current path, so it uses less memory.
 
+Open and Closed Lists
+Many search algorithms keep an open list of frontier nodes waiting to be expanded.
+A closed list records nodes that have already been expanded to avoid repeated work.
+
+Informed (Heuristic) Search
+Informed search uses heuristic information from the problem domain to guide expansion.
+A heuristic estimate should prefer states that appear closer to the goal.
+
 A* Search
 A* is an algorithm that uses a heuristic to guide the search while aiming for a minimum-cost path.
 A* computes the function f(n) = g(n) + h(n).
 g(n) is the actual cost from the start node to n.
 h(n) is an estimate of the cost of the cheapest path from n to the goal.
 The heuristic h(n) guides search toward promising states.
+If h(n) is admissible, meaning it never overestimates the true remaining cost, A* is optimal for the given graph assumptions in the notes.
 
 Genetic Algorithm
 A genetic algorithm evaluates individuals with a fitness function.
 New solutions are produced by selection, crossover, and mutation across generations.
+Unlike A*, a genetic algorithm does not guarantee a minimum-cost path on every run.

@@ -1,0 +1,79 @@
+{
+  "name": "detect_intent_llm_v1_1",
+  "description": "Utterances where explicit_intent returns chat; expect StudyAgent.detect_intent (LLM). v1.1: score action first; optional goal/topic via expect_any only where stable.",
+  "cases": [
+    {
+      "id": "llm_replan_unfinished",
+      "text": "把没做完的任务重新安排一下",
+      "history": [],
+      "expect": { "action": "replan" }
+    },
+    {
+      "id": "llm_replan_daily_hour",
+      "text": "重新排一下还没打卡的任务，每天一小时",
+      "history": [],
+      "expect": { "action": "replan" }
+    },
+    {
+      "id": "llm_plan_neural_three_days",
+      "text": "我想用三天把神经网络这一块捡起来",
+      "history": [],
+      "expect": { "action": "plan" },
+      "expect_any": { "goal": ["神经网络", "神经", "network"] }
+    },
+    {
+      "id": "llm_plan_weekend_schedule",
+      "text": "周末两天每天学一小时排个表",
+      "history": [],
+      "expect": { "action": "plan" }
+    },
+    {
+      "id": "llm_review_walkthrough",
+      "text": "能不能带我过一遍今天学的要点",
+      "history": [],
+      "expect": { "action": "review" }
+    },
+    {
+      "id": "llm_review_chapter",
+      "text": "今晚我想集中复习遗传算法",
+      "history": [],
+      "expect": { "action": "review" }
+    },
+    {
+      "id": "llm_quiz_practice",
+      "text": "来两道选择题练练手",
+      "history": [],
+      "expect": { "action": "quiz" }
+    },
+    {
+      "id": "llm_today_tasks",
+      "text": "今天还有什么学习任务",
+      "history": [],
+      "expect": { "action": "today" }
+    },
+    {
+      "id": "llm_today_todo",
+      "text": "看看我今天的待办",
+      "history": [],
+      "expect": { "action": "today" }
+    },
+    {
+      "id": "llm_next_stuck",
+      "text": "接下来该刷题还是看讲义",
+      "history": [],
+      "expect": { "action": "next" }
+    },
+    {
+      "id": "llm_chat_confused_topic",
+      "text": "这门课的反向传播我总是搞混",
+      "history": [],
+      "expect": { "action": "chat" }
+    },
+    {
+      "id": "llm_chat_explain_not_plan",
+      "text": "怎么理解 attention 里的 query 和 key",
+      "history": [],
+      "expect": { "action": "chat" }
+    }
+  ]
+}

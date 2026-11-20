@@ -1,0 +1,292 @@
+{
+  "name": "task_flow_routing_v1",
+  "description": "Deterministic task-flow checks: explicit_intent, route_request, and resolve_turn (no LLM, no WebSocket).",
+  "cases": [
+    {
+      "id": "intent_plan_full",
+      "layer": "intent",
+      "text": "帮我制定复习数据库的学习计划，3天每天30分钟",
+      "expect": { "action": "plan", "goal": "数据库", "days": 3, "minutes_per_day": 30 }
+    },
+    {
+      "id": "intent_plan_goal_pending",
+      "layer": "intent",
+      "text": "帮我制定学习计划",
+      "expect": { "action": "plan", "goal": "" }
+    },
+    {
+      "id": "intent_plan_how_not_command",
+      "layer": "intent",
+      "text": "怎么制定学习计划？",
+      "expect": { "action": "chat" }
+    },
+    {
+      "id": "intent_plan_days_out_of_range",
+      "layer": "intent",
+      "text": "帮我制定复习数据库的学习计划，99天",
+      "expect": { "action": "chat" }
+    },
+    {
+      "id": "intent_replan",
+      "layer": "intent",
+      "text": "重新安排未完成任务，2天每天60分钟",
+      "expect": { "action": "replan", "days": 2, "minutes_per_day": 60 }
+    },
+    {
+      "id": "intent_focus_seconds",
+      "layer": "intent",
+      "text": "我需要进行30s专注",
+      "expect": { "action": "focus", "seconds": 30, "minutes": 0 }
+    },
+    {
+      "id": "intent_focus_minutes",
+      "layer": "intent",
+      "text": "25分钟专注",
+      "expect": { "action": "focus", "minutes": 25 }
+    },
+    {
+      "id": "intent_focus_default",
+      "layer": "intent",
+      "text": "开始专注",
+      "expect": { "action": "focus", "minutes": 25 }
+    },
+    {
+      "id": "intent_done",
+      "layer": "intent",
+      "text": "我做完了",
+      "expect": { "action": "done" }
+    },
+    {
+      "id": "intent_quiz_zh",
+      "layer": "intent",
+      "text": "今日小测",
+      "expect": { "action": "quiz" }
+    },
+    {
+      "id": "intent_quiz_traditional",
+      "layer": "intent",
+      "text": "今日小測",
+      "expect": { "action": "quiz" }
+    },
+    {
+      "id": "intent_review_zh",
+      "layer": "intent",
+      "text": "開始復習",
+      "expect": { "action": "review" }
+    },
+    {
+      "id": "intent_review_topic",
+      "layer": "intent",
+      "text": "开始复习 B+树",
+      "expect": { "action": "review", "topic": "B+树" }
+    },
+    {
+      "id": "intent_review_phrase_not_command",
+      "layer": "intent",
+      "text": "复习数据库",
+      "expect": { "action": "chat" }
+    },
+    {
+      "id": "intent_weak",
+      "layer": "intent",
+      "text": "错题再练",
+      "expect": { "action": "weak" }
+    },
+    {
+      "id": "intent_today",
+      "layer": "intent",
+      "text": "今日计划",
+      "expect": { "action": "today" }
+    },
+    {
+      "id": "intent_next_coach",
+      "layer": "intent",
+      "text": "下一步该学什么",
+      "expect": { "action": "next" }
+    },
+    {
+      "id": "intent_rag_question_not_plan",
+      "layer": "intent",
+      "text": "数据库索引有什么用途？",
+      "expect": { "action": "chat" }
+    },
+    {
+      "id": "route_greeting_chat",
+      "layer": "route",
+      "text": "你好呀",
+      "context": { "has_documents": true, "forced": false },
+      "expect": { "route": "chat" }
+    },
+    {
+      "id": "route_companion_with_docs",
+      "layer": "route",
+      "text": "陪我学习",
+      "context": { "has_documents": true },
+      "expect": { "route": "chat" }
+    },
+    {
+      "id": "route_summary",
+      "layer": "route",
+      "text": "总结一下这份讲义讲了什么",
+      "context": { "has_documents": true },
+      "expect": { "route": "summary" }
+    },
+    {
+      "id": "route_compare",
+      "layer": "route",
+      "text": "对比 BFS 和 DFS 的区别",
+      "context": { "has_documents": true },
+      "expect": { "route": "compare" }
+    },
+    {
+      "id": "route_material_question",
+      "layer": "route",
+      "text": "A* 的 f(n) 怎么定义？",
+      "context": { "has_documents": true },
+      "expect": { "route": "knowledge" }
+    },
+    {
+      "id": "route_forced_knowledge",
+      "layer": "route",
+      "text": "好的",
+      "context": { "forced": true, "has_documents": true },
+      "expect": { "route": "knowledge" }
+    },
+    {
+      "id": "route_followup_with_topic",
+      "layer": "route",
+      "text": "那为什么 BFS 占内存？",
+      "context": { "has_documents": true, "active_topic": true },
+      "expect": { "route": "knowledge" }
+    },
+    {
+      "id": "route_chitchat_no_docs",
+      "layer": "route",
+      "text": "今天好累",
+      "context": { "has_documents": false },
+      "expect": { "route": "chat" }
+    },
+    {
+      "id": "turn_plan_command",
+      "layer": "turn",
+      "text": "帮我制定复习数据库的学习计划，3天每天30分钟",
+      "context": { "route": "chat", "waiting": false },
+      "expect": { "kind": "command", "action": "plan" }
+    },
+    {
+      "id": "turn_plan_beats_knowledge_route",
+      "layer": "turn",
+      "text": "帮我制定复习数据库的学习计划，3天每天30分钟",
+      "context": { "route": "knowledge", "waiting": false },
+      "expect": { "kind": "command", "action": "plan" }
+    },
+    {
+      "id": "turn_quiz_not_rag",
+      "layer": "turn",
+      "text": "今日小测",
+      "context": { "route": "knowledge", "waiting": false },
+      "expect": { "kind": "command", "action": "quiz" }
+    },
+    {
+      "id": "turn_review_not_rag",
+      "layer": "turn",
+      "text": "开始复习",
+      "context": { "route": "knowledge", "waiting": false },
+      "expect": { "kind": "command", "action": "review" }
+    },
+    {
+      "id": "turn_confused_to_knowledge",
+      "layer": "turn",
+      "text": "我看不懂",
+      "context": {
+        "route": "chat",
+        "waiting": false,
+        "pending_plan": true,
+        "intent_action": "plan",
+        "intent_goal": "复习双MACD"
+      },
+      "expect": { "kind": "knowledge", "action": "chat", "route": "knowledge" }
+    },
+    {
+      "id": "turn_plan_followup",
+      "layer": "turn",
+      "text": "数据库索引",
+      "context": {
+        "route": "chat",
+        "waiting": false,
+        "pending_plan": true,
+        "intent_action": "plan",
+        "intent_goal": "数据库索引"
+      },
+      "expect": { "kind": "command", "action": "plan" },
+      "notes": "After pending-plan goal reply, main sets goal on plan intent; command wins before plan_followup branch (handled same as plan_followup in main)."
+    },
+    {
+      "id": "turn_waiting_grade_b",
+      "layer": "turn",
+      "text": "B",
+      "context": { "route": "knowledge", "waiting": true },
+      "expect": { "kind": "review_answer" }
+    },
+    {
+      "id": "turn_waiting_grade_prose",
+      "layer": "turn",
+      "text": "预测指对未来价格走势做出判断并举例说明",
+      "context": { "route": "chat", "waiting": true },
+      "expect": { "kind": "review_answer" }
+    },
+    {
+      "id": "turn_waiting_give_up",
+      "layer": "turn",
+      "text": "不知道",
+      "context": { "route": "chat", "waiting": true, "intent_action": "next" },
+      "expect": { "kind": "review_answer" }
+    },
+    {
+      "id": "turn_waiting_skip",
+      "layer": "turn",
+      "text": "先不答",
+      "context": { "route": "chat", "waiting": true },
+      "expect": { "kind": "skip" }
+    },
+    {
+      "id": "turn_waiting_clear_question_to_rag",
+      "layer": "turn",
+      "text": "什么是预测？",
+      "context": { "route": "knowledge", "waiting": true },
+      "expect": { "kind": "knowledge" }
+    },
+    {
+      "id": "turn_focus_while_waiting",
+      "layer": "turn",
+      "text": "我需要进行30s专注",
+      "context": { "route": "chat", "waiting": true },
+      "expect": { "kind": "command", "action": "focus" }
+    },
+    {
+      "id": "turn_material_qa_knowledge",
+      "layer": "turn",
+      "text": "遗传算法的 crossover 是什么？",
+      "context": { "route": "knowledge", "waiting": false, "has_documents": true },
+      "expect": { "kind": "knowledge", "route": "knowledge" }
+    },
+    {
+      "id": "turn_compare_route_knowledge",
+      "layer": "turn",
+      "text": "比较 uninformed 和 informed search",
+      "context": { "route": "compare", "waiting": false },
+      "expect": { "kind": "knowledge", "route": "compare" }
+    },
+    {
+      "id": "turn_soft_next_while_waiting",
+      "layer": "turn",
+      "text": "这题我猜是供需预期",
+      "context": {
+        "route": "chat",
+        "waiting": true,
+        "intent_action": "next"
+      },
+      "expect": { "kind": "review_answer" }
+    }
+  ]
+}

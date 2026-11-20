@@ -1,0 +1,124 @@
+{
+  "experiment": "doudou-detect-intent-judge-25545d39",
+  "n_runs": 6,
+  "runs_missing_action": 1,
+  "metrics": {
+    "used_llm": {
+      "mean": null,
+      "n": 0,
+      "null": 6,
+      "fails": []
+    },
+    "intent_match": {
+      "mean": 1.0,
+      "n": 6,
+      "null": 0,
+      "fails": []
+    },
+    "action_appropriate": {
+      "mean": 1.0,
+      "n": 6,
+      "null": 0,
+      "fails": []
+    }
+  },
+  "cases": {
+    "llm_plan_neural_three_days": {
+      "outputs": {},
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    },
+    "llm_replan_unfinished": {
+      "outputs": {
+        "action": "replan",
+        "days": 3,
+        "explicit_action": "chat",
+        "goal": "",
+        "minutes": 25,
+        "minutes_per_day": 45,
+        "seconds": 0,
+        "text": "把没做完的任务重新安排一下",
+        "topic": "",
+        "used_llm": true
+      },
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    },
+    "llm_next_stuck": {
+      "outputs": {
+        "action": "next",
+        "days": 3,
+        "explicit_action": "chat",
+        "goal": "",
+        "minutes": 25,
+        "minutes_per_day": 45,
+        "seconds": 0,
+        "text": "接下来该刷题还是看讲义",
+        "topic": "",
+        "used_llm": true
+      },
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    },
+    "llm_quiz_practice": {
+      "outputs": {
+        "action": "quiz",
+        "days": 3,
+        "explicit_action": "chat",
+        "goal": "",
+        "minutes": 25,
+        "minutes_per_day": 45,
+        "seconds": 0,
+        "text": "来两道选择题练练手",
+        "topic": "",
+        "used_llm": true
+      },
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    },
+    "llm_chat_confused_topic": {
+      "outputs": {
+        "action": "chat",
+        "days": 3,
+        "explicit_action": "chat",
+        "goal": "反向传播",
+        "minutes": 25,
+        "minutes_per_day": 45,
+        "seconds": 0,
+        "text": "这门课的反向传播我总是搞混",
+        "topic": "",
+        "used_llm": true
+      },
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    },
+    "llm_review_walkthrough": {
+      "outputs": {
+        "action": "review",
+        "days": 3,
+        "explicit_action": "chat",
+        "goal": "",
+        "minutes": 25,
+        "minutes_per_day": 45,
+        "seconds": 0,
+        "text": "能不能带我过一遍今天学的要点",
+        "topic": "",
+        "used_llm": true
+      },
+      "scores": {
+        "intent_match": 1.0,
+        "action_appropriate": 1.0
+      }
+    }
+  }
+}

@@ -19,4 +19,8 @@ docs/report-*.md
 docs/rag-benchmark-results.md
 docs/rag-benchmark-results.json
 docs/report-demo-ch2/README.md
-services/api/eval/out/
+# Local/offline eval artifacts (not for reports); keep LangSmith LLM summaries only
+services/api/eval/out/*
+!services/api/eval/out/langsmith-configured-judge-summary.json
+!services/api/eval/out/detect-intent-langsmith-summary.json
+services/api/eval/corpus/dsai5205/*.pdf

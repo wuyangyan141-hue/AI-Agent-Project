@@ -1,6 +1,4 @@
 param(
-    [ValidateSet("offline", "configured")]
-    [string]$Mode = "offline",
     [switch]$Judge
 )
 
@@ -32,7 +30,7 @@ $env:LANGSMITH_TRACING = "true"
 $env:LANGSMITH_PROJECT = "doudou-rag-eval"
 Push-Location $apiDir
 try {
-    $evalArgs = @("-m", "eval.langsmith_rag", "--mode", $Mode)
+    $evalArgs = @("-m", "eval.langsmith_rag", "--mode", "configured")
     if ($Judge) { $evalArgs += "--judge" }
     & $python @evalArgs
     if ($LASTEXITCODE -ne 0) { throw "RAG evaluation failed (exit code $LASTEXITCODE)." }
